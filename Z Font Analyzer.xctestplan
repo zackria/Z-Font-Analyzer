@@ -1,0 +1,38 @@
+{
+  "configurations" : [
+    {
+      "id" : "084FD631-BC0C-4575-BEBA-4BBA4BD734DF",
+      "name" : "Test Scheme Action",
+      "options" : {
+
+      }
+    }
+  ],
+  "defaultOptions" : {
+    "performanceAntipatternCheckerEnabled" : true,
+    "targetForVariableExpansion" : {
+      "containerPath" : "container:Z Font Analyzer.xcodeproj",
+      "identifier" : "BF5288FE2DE360D80045EA8B",
+      "name" : "Z Font Analyzer"
+    }
+  },
+  "testTargets" : [
+    {
+      "parallelizable" : true,
+      "target" : {
+        "containerPath" : "container:Z Font Analyzer.xcodeproj",
+        "identifier" : "BF52890E2DE360DA0045EA8B",
+        "name" : "Z Font AnalyzerTests"
+      }
+    },
+    {
+      "parallelizable" : true,
+      "target" : {
+        "containerPath" : "container:Z Font Analyzer.xcodeproj",
+        "identifier" : "BF5289182DE360DA0045EA8B",
+        "name" : "Z Font AnalyzerUITests"
+      }
+    }
+  ],
+  "version" : 1
+}

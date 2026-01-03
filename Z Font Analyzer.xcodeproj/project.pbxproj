@@ -32,6 +32,7 @@
 		BF52890F2DE360DA0045EA8B /* Z Font AnalyzerTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = "Z Font AnalyzerTests.xctest"; sourceTree = BUILT_PRODUCTS_DIR; };
 		BF5289192DE360DA0045EA8B /* Z Font AnalyzerUITests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = "Z Font AnalyzerUITests.xctest"; sourceTree = BUILT_PRODUCTS_DIR; };
 		BF52892F2DE3FFF70045EA8B /* design.md */ = {isa = PBXFileReference; lastKnownFileType = net.daringfireball.markdown; path = design.md; sourceTree = "<group>"; };
+		BFE0E9CF2F0873E800317779 /* Z Font Analyzer.xctestplan */ = {isa = PBXFileReference; lastKnownFileType = file; path = "Z Font Analyzer.xctestplan"; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFileSystemSynchronizedRootGroup section */
@@ -80,6 +81,7 @@
 		BF5288F62DE360D70045EA8B = {
 			isa = PBXGroup;
 			children = (
+				BFE0E9CF2F0873E800317779 /* Z Font Analyzer.xctestplan */,
 				BF52892F2DE3FFF70045EA8B /* design.md */,
 				BF5289012DE360D80045EA8B /* Z Font Analyzer */,
 				BF5289122DE360DA0045EA8B /* Z Font AnalyzerTests */,
@@ -198,6 +200,11 @@
 			knownRegions = (
 				en,
 				Base,
+				es,
+				fr,
+				de,
+				ar,
+				"zh-Hans",
 			);
 			mainGroup = BF5288F62DE360D70045EA8B;
 			minimizedProjectReferenceProxies = 1;

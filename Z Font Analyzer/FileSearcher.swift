@@ -1,27 +1,6 @@
 import Foundation
 import Combine
 
-// MARK: - FontMatch Struct
-
-// Represents a single found font, including its name and the file path where it was found.
-struct FontMatch: Identifiable, Hashable, Codable {
-    var id: String { "\(fontName)|\(filePath)" } // Stable unique id for SwiftUI
-    let fontName: String // The name of the font found
-    let filePath: String // The full path to the file containing the font
-
-    // CodingKeys for Codable conformance, ensuring consistent encoding/decoding.
-    enum CodingKeys: String, CodingKey {
-        case fontName
-        case filePath
-    }
-
-    // Hashable conformance for efficient storage in sets and dictionaries.
-    func hash(into hasher: inout Hasher) {
-        hasher.combine(fontName)
-        hasher.combine(filePath)
-    }
-}
-
 // MARK: - FileSearcher Class
 
 // ObservableObject responsible for performing file searches, parsing font information,
@@ -48,7 +27,9 @@ class FileSearcher: ObservableObject {
     // Serial queue to synchronize access to `resultsAccumulator` and temporary count dictionaries.
     private var resultsAccessQueue = DispatchQueue(label: "com.fontfinder.resultsAccessQueue")
     // Temporary array to accumulate results before publishing to `foundFonts`.
+    // We'll limit the in-memory results to avoid huge memory usage.
     private var resultsAccumulator = [FontMatch]()
+    @Published var totalFoundCount: Int = 0
 
     private var shouldCancelSearch = false // Flag to signal cancellation of the search
     private var currentDirectoryAccess: URL? // Stores the URL for managing security-scoped bookmark access
@@ -62,9 +43,7 @@ class FileSearcher: ObservableObject {
     ///   - skipHiddenFolders: A boolean indicating whether to skip hidden folders (starting with '.').
     func startSearch(in directoryURL: URL, maxConcurrentOperations: Int, skipHiddenFolders: Bool) {
         guard directoryURL.isFileURL else {
-            DispatchQueue.main.async {
-                self.errorMessage = "Invalid directory URL."
-            }
+            self.errorMessage = "invalid_directory".localized
             return
         }
 
@@ -72,7 +51,6 @@ class FileSearcher: ObservableObject {
         stopAccessingCurrentDirectory()
         currentDirectoryAccess = directoryURL
         // Attempt to start accessing the security-scoped resource.
-        // This is crucial for accessing directories outside the app's sandbox.
         _ = directoryURL.startAccessingSecurityScopedResource()
 
         let semaphore = DispatchSemaphore(value: max(1, maxConcurrentOperations)) // Controls concurrency limit
@@ -86,12 +64,14 @@ class FileSearcher: ObservableObject {
             self.fileTypeCounts = [:]
             self.fontNameCounts = [:]
             self.fontNameToFileType = [:]
-            self.searchProgress = "Starting search..."
+            self.searchProgress = "starting_search".localized
         }
 
-        // Clear the accumulator on the results access queue for thread safety.
+        // Clear the database and accumulator
+        PersistenceService.shared.clearDatabase()
         resultsAccessQueue.sync {
             self.resultsAccumulator = []
+            self.totalFoundCount = 0
         }
 
         // Perform the search operation on a background queue to keep the UI responsive.
@@ -109,19 +89,21 @@ class FileSearcher: ObservableObject {
 
             // Handle case where no target files are found.
             guard !filesToProcess.isEmpty else {
-                self.finalizeSearch(message: "No target files found.")
+                self.finalizeSearch(message: "no_target_files".localized)
                 return
             }
 
             // Update progress on the main thread.
             DispatchQueue.main.async {
-                self.searchProgress = "Processing \(filesToProcess.count) files..."
+                self.searchProgress = String(format: "processing_files".localized, filesToProcess.count)
             }
 
             let totalFiles = filesToProcess.count
             var processedCount = 0
 
-            // Temporary dictionaries to accumulate counts for batch updates.
+            var batchBuffer: [(FontMatch, String)] = []
+            let batchSize = 500
+            
             var tempFontNameCounts: [String: Int] = [:]
             var tempFontNameToFileType: [String: String] = [:]
             var tempFileTypeCounts: [String: Int] = [:]
@@ -141,23 +123,32 @@ class FileSearcher: ObservableObject {
                     let matchPairs = self.processFile(at: fileURL) // Process the file
 
                     self.resultsAccessQueue.sync { // Synchronize access to shared accumulators
+                        batchBuffer.append(contentsOf: matchPairs)
+                        
                         for (match, fileType) in matchPairs {
-                            self.resultsAccumulator.append(match)
                             tempFontNameCounts[match.fontName, default: 0] += 1
-                            // Only store the first encountered file type for a font name.
                             if tempFontNameToFileType[match.fontName] == nil {
                                 tempFontNameToFileType[match.fontName] = fileType
                             }
                         }
+                        
                         processedCount += 1
                         let fileExtension = "." + fileURL.pathExtension.lowercased()
                         tempFileTypeCounts[fileExtension, default: 0] += 1
+                        
+                        // Batch insert to database
+                        if batchBuffer.count >= batchSize || (processedCount == totalFiles && !batchBuffer.isEmpty) {
+                            PersistenceService.shared.insertFontsBatch(batchBuffer)
+                            self.totalFoundCount += batchBuffer.count
+                            self.resultsAccumulator.append(contentsOf: batchBuffer.map { $0.0 })
+                            batchBuffer.removeAll()
+                        }
                     }
 
                     // Update progress on main thread periodically to avoid excessive UI updates.
-                    if processedCount % max(1, totalFiles / 100) == 0 || processedCount == totalFiles {
+                    if processedCount % max(1, totalFiles / 50) == 0 || processedCount == totalFiles {
                         DispatchQueue.main.async {
-                            self.searchProgress = "Processed \(processedCount)/\(totalFiles) files."
+                            self.searchProgress = String(format: "processed_status".localized, processedCount, totalFiles)
                         }
                     }
 
@@ -183,9 +174,9 @@ class FileSearcher: ObservableObject {
                 }
 
                 self.foundFonts = finalResults // Publish the final results
-                self.finalizeSearch(message: "Search complete. Found \(self.foundFonts.count) font entries.")
+                self.finalizeSearch(message: String(format: "search_complete".localized, self.foundFonts.count))
                 if self.foundFonts.isEmpty {
-                    self.errorMessage = "No font tags found in the target files."
+                    self.errorMessage = "no_font_tags".localized
                 }
             }
         }
@@ -194,10 +185,8 @@ class FileSearcher: ObservableObject {
     /// Cancels the ongoing search operation.
     func cancelSearch() {
         shouldCancelSearch = true // Set the cancellation flag
-        DispatchQueue.main.async {
-            self.searchProgress = "Search cancelled."
-            self.isSearching = false
-        }
+        self.searchProgress = "cancel_search".localized
+        self.isSearching = false
     }
     
     /// Stops accessing the current security-scoped directory, if any.
@@ -212,39 +201,40 @@ class FileSearcher: ObservableObject {
     // MARK: - Private Helper Methods
 
     /// Recursively finds all target files within a given directory.
-    /// - Parameters:
-    ///   - directoryURL: The URL of the directory to search.
-    ///   - skipHiddenFolders: A boolean indicating whether to skip hidden folders.
-    /// - Returns: An array of URLs pointing to the target files.
     private func findTargetFiles(in directoryURL: URL, skipHiddenFolders: Bool) -> [URL] {
         var files: [URL] = []
+        
+        var options: FileManager.DirectoryEnumerationOptions = [.skipsPackageDescendants]
+        if skipHiddenFolders {
+            options.insert(.skipsHiddenFiles)
+        }
         
         guard let enumerator = fileManager.enumerator(
             at: directoryURL,
             includingPropertiesForKeys: [.isRegularFileKey, .isDirectoryKey],
-            options: [.skipsPackageDescendants] // Skip contents of packages (e.g., .app bundles)
+            options: options
         ) else {
             DispatchQueue.main.async {
-                self.errorMessage = "Could not access directory: \(directoryURL.lastPathComponent)"
+                self.errorMessage = String(format: "access_error".localized, directoryURL.lastPathComponent)
             }
             return []
         }
 
         for case let fileURL as URL in enumerator {
-            guard !shouldCancelSearch else { return [] } // Exit early if search is cancelled
+            guard !shouldCancelSearch else { return [] }
 
-            // Skip hidden folders if the option is enabled.
-            if skipHiddenFolders, fileURL.lastPathComponent.hasPrefix(".") {
-                continue
+            if skipHiddenFolders {
+                let relativePath = fileURL.path.replacingOccurrences(of: directoryURL.path, with: "")
+                if relativePath.split(separator: "/").contains(where: { $0.hasPrefix(".") }) {
+                    continue
+                }
             }
 
             var isDirectory: ObjCBool = false
-            // Check if the file exists and is not a directory.
             guard fileManager.fileExists(atPath: fileURL.path, isDirectory: &isDirectory) else { continue }
-            guard !isDirectory.boolValue else { continue } // Skip directories
+            guard !isDirectory.boolValue else { continue }
 
             let pathExtension = fileURL.pathExtension.lowercased()
-            // Add file to list if its extension is in the target extensions set.
             if targetExtensions.contains("." + pathExtension) {
                 files.append(fileURL)
             }
@@ -253,82 +243,42 @@ class FileSearcher: ObservableObject {
     }
 
     /// Processes a single file to extract font names using a regular expression.
-    /// - Parameter fileURL: The URL of the file to process.
-    /// - Returns: An array of tuples, each containing a FontMatch and its associated file type.
     private func processFile(at fileURL: URL) -> [(FontMatch, String)] {
         var matches: [(FontMatch, String)] = []
         do {
-            // Check for cancellation before processing a potentially large file.
             guard !shouldCancelSearch else { return [] }
 
-            let content = try String(contentsOf: fileURL, encoding: .utf8) // Read file content
-            let regex = try NSRegularExpression(pattern: fontTagPattern, options: []) // Create regex
-            let nsRange = NSRange(content.startIndex..<content.endIndex, in: content) // Define search range
+            let content = try String(contentsOf: fileURL, encoding: .utf8)
+            let regex = try NSRegularExpression(pattern: fontTagPattern, options: [])
+            let nsRange = NSRange(content.startIndex..<content.endIndex, in: content)
 
-            // Enumerate all matches of the regex pattern in the file content.
             regex.enumerateMatches(in: content, options: [], range: nsRange) { (result, _, _) in
-                guard !shouldCancelSearch else { return } // Check for cancellation during enumeration
+                guard !shouldCancelSearch else { return }
 
-                if let match = result, match.numberOfRanges > 1, // Ensure a match and a captured group exist
-                   let range = Range(match.range(at: 1), in: content) { // Get range of the captured group (font name)
-                    let fontName = String(content[range]) // Extract font name
-                    let fontMatch = FontMatch(fontName: fontName, filePath: fileURL.path) // Create FontMatch object
-                    let fileType = "." + fileURL.pathExtension.lowercased() // Determine file type
-                    matches.append((fontMatch, fileType)) // Add to matches
+                if let match = result, match.numberOfRanges > 1,
+                   let range = Range(match.range(at: 1), in: content) {
+                    let fontName = String(content[range])
+                    let fontMatch = FontMatch(fontName: fontName, filePath: fileURL.path)
+                    let fileType = "." + fileURL.pathExtension.lowercased()
+                    matches.append((fontMatch, fileType))
                 }
             }
         } catch {
-            // Silently ignore file read errors.
-            // In a production app, consider logging these errors for debugging purposes.
             print("Error reading file \(fileURL.lastPathComponent): \(error.localizedDescription)")
         }
         return matches
     }
 
     /// Finalizes the search operation, updating the UI state.
-    /// - Parameters:
-    ///   - cancelled: True if the search was cancelled, false otherwise.
-    ///   - message: An optional message to display as search progress.
     private func finalizeSearch(cancelled: Bool = false, message: String? = nil) {
         DispatchQueue.main.async {
-            self.isSearching = false // Set searching state to false
+            self.isSearching = false
             if cancelled {
-                self.searchProgress = "Search cancelled."
+                self.searchProgress = "cancel_search".localized
             } else if let msg = message {
                 self.searchProgress = msg
             }
         }
     }
-
-    // MARK: - Export Methods
-
-    /// Generates JSON data from the found fonts.
-    /// - Returns: Data containing the JSON representation of found fonts, or nil if an error occurs.
-    func exportJSONData() -> Data? {
-        // Map FontMatch objects to a dictionary format suitable for JSON serialization.
-        let exportableFonts = foundFonts.map { ["fontName": $0.fontName, "filePath": $0.filePath] }
-        do {
-            // Serialize the dictionary to JSON data with pretty printing.
-            let jsonData = try JSONSerialization.data(withJSONObject: exportableFonts, options: .prettyPrinted)
-            return jsonData
-        } catch {
-            errorMessage = "Failed to generate JSON data: \(error.localizedDescription)"
-            return nil
-        }
-    }
-
-    /// Generates CSV data from the found fonts.
-    /// - Returns: Data containing the CSV representation of found fonts, or nil if an error occurs.
-    func exportCSVData() -> Data? {
-        var csvString = "Font Name,File Path,File Type\n" // CSV header
-        for fontMatch in foundFonts {
-            // Escape commas in font name and file path to prevent CSV parsing issues.
-            let fontName = fontMatch.fontName.replacingOccurrences(of: ",", with: ";")
-            let filePath = fontMatch.filePath.replacingOccurrences(of: ",", with: ";")
-            // Get the associated file type, or "-" if not found.
-            let fileType = fontNameToFileType[fontMatch.fontName] ?? "-"
-            csvString += "\(fontName),\(filePath),\(fileType)\n" // Append data row
-        }
-        return csvString.data(using: .utf8) // Convert string to Data
-    }
 }
+

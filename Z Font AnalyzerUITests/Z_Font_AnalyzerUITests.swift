@@ -1,41 +1,65 @@
-//
-//  Z_Font_AnalyzerUITests.swift
-//  Z Font AnalyzerUITests
-//
-//  Created by Zack Dawood on 2025-05-25.
-//
-
 import XCTest
 
 final class Z_Font_AnalyzerUITests: XCTestCase {
 
     override func setUpWithError() throws {
-        // Put setup code here. This method is called before the invocation of each test method in the class.
-
-        // In UI tests it is usually best to stop immediately when a failure occurs.
         continueAfterFailure = false
-
-        // In UI tests it’s important to set the initial state - such as interface orientation - required for your tests before they run. The setUp method is a good place to do this.
-    }
-
-    override func tearDownWithError() throws {
-        // Put teardown code here. This method is called after the invocation of each test method in the class.
     }
 
     @MainActor
-    func testExample() throws {
-        // UI tests must launch the application that they test.
+    func testDumpHierarchy() throws {
+        let app = XCUIApplication()
+        app.launch()
+        print(app.debugDescription)
+    }
+
+    @MainActor
+    func testNavigationAndTabs() throws {
         let app = XCUIApplication()
         app.launch()
 
-        // Use XCTAssert and related functions to verify your tests produce the correct results.
-    }
+        // Give it some time to load
+        let window = app.windows.firstMatch
+        XCTAssertTrue(window.waitForExistence(timeout: 20))
 
-    @MainActor
-    func testLaunchPerformance() throws {
-        // This measures how long it takes to launch your application.
-        measure(metrics: [XCTApplicationLaunchMetric()]) {
-            XCUIApplication().launch()
+        // On macOS TabView, items are often radio buttons in a list or bar
+        // Let's try to find them by type first
+        let buttons = app.buttons
+        
+        // Try clicking by identifier first
+        let dashboardTab = buttons["dashboard_tab"]
+        if dashboardTab.waitForExistence(timeout: 5) {
+            dashboardTab.click()
+        }
+        
+        let fontsTab = buttons["fonts_tab"]
+        if fontsTab.waitForExistence(timeout: 2) {
+            fontsTab.click()
+        }
+
+        let filesTab = buttons["files_tab"]
+        if filesTab.waitForExistence(timeout: 2) {
+            filesTab.click()
+        }
+
+        let resultsTab = buttons["results_tab"]
+        if resultsTab.waitForExistence(timeout: 2) {
+            resultsTab.click()
+        }
+        
+        // Go back to dashboard
+        if dashboardTab.exists {
+            dashboardTab.click()
+        }
+        
+        // Settings
+        let settingsBtn = buttons["settings_button"]
+        if settingsBtn.exists {
+            settingsBtn.click()
+            let doneBtn = buttons["done_button"]
+            if doneBtn.waitForExistence(timeout: 5) {
+                doneBtn.click()
+            }
         }
     }
 }

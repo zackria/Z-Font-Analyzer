@@ -1,16 +1,12 @@
-//
-//  Z_Font_AnalyzerTests.swift
-//  Z Font AnalyzerTests
-//
-//  Created by Zack Dawood on 2025-05-25.
-//
+import XCTest
+@testable import Z_Font_Analyzer
 
-import Testing
+final class Z_Font_AnalyzerTests: XCTestCase {
 
-struct Z_Font_AnalyzerTests {
-
-    @Test func example() async throws {
-        // Write your test here and use APIs like `#expect(...)` to check expected conditions.
+    func testAppLaunch() {
+        // Basic test to ensure the test target can load the app module
+        XCTAssertNotNil(LocalizationService.shared)
+        XCTAssertNotNil(PersistenceService.shared)
     }
 
 }
