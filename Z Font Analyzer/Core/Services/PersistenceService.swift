@@ -1,7 +1,7 @@
 import Foundation
 import SQLite3
 
-final class PersistenceService {
+final class PersistenceService: @unchecked Sendable {
     static let shared = PersistenceService()
     private var db: OpaquePointer?
     
@@ -241,7 +241,7 @@ final class PersistenceService {
         }
         return results
     }
-    }
+
 
     // MARK: - Async Support
     

@@ -187,7 +187,7 @@ final class Z_Font_AnalyzerUITests: XCTestCase {
         }
         
         // Try to click an item in the menu
-        let jsonOption = app.buttons["Export Files Tab JSON"] // Hardcoded fallback or localized needed
+        _ = app.buttons["Export Files Tab JSON"] // Hardcoded fallback or localized needed
         // Since menu items might not be immediately queryable or might need localized string
         // We will just wait a bit to ensure menu opened
         Thread.sleep(forTimeInterval: 0.5)

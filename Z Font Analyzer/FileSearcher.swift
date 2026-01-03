@@ -43,7 +43,14 @@ class FileSearcher: ObservableObject {
     ///   - skipHiddenFolders: A boolean indicating whether to skip hidden folders (starting with '.').
     func startSearch(in directoryURL: URL, maxConcurrentOperations: Int, skipHiddenFolders: Bool) {
         guard directoryURL.isFileURL else {
-            self.errorMessage = "invalid_directory".localized
+            // Ensure UI reflects failure state if a non-file URL slips through
+            DispatchQueue.main.async {
+                self.isSearching = false
+                self.searchProgress = ""
+                self.errorMessage = "invalid_directory".localized
+            }
+            // Stop any previous access just in case
+            stopAccessingCurrentDirectory()
             return
         }
 
@@ -51,7 +58,14 @@ class FileSearcher: ObservableObject {
         stopAccessingCurrentDirectory()
         currentDirectoryAccess = directoryURL
         // Attempt to start accessing the security-scoped resource.
-        _ = directoryURL.startAccessingSecurityScopedResource()
+        if directoryURL.startAccessingSecurityScopedResource() {
+            print("Successfully started accessing: \(directoryURL.path)")
+        } else {
+            print("Failed to start accessing security scoped resource: \(directoryURL.path). Ensure entitlements are set.")
+            DispatchQueue.main.async {
+                self.errorMessage = String(format: "access_error".localized, directoryURL.lastPathComponent)
+            }
+        }
 
         let semaphore = DispatchSemaphore(value: max(1, maxConcurrentOperations)) // Controls concurrency limit
         shouldCancelSearch = false // Reset cancellation flag for a new search
@@ -188,6 +202,7 @@ class FileSearcher: ObservableObject {
     /// Cancels the ongoing search operation.
     func cancelSearch() {
         shouldCancelSearch = true // Set the cancellation flag
+        stopAccessingCurrentDirectory()
         DispatchQueue.main.async {
             self.searchProgress = "cancel_search".localized
             self.isSearching = false
@@ -276,6 +291,7 @@ class FileSearcher: ObservableObject {
 
     /// Finalizes the search operation, updating the UI state.
     private func finalizeSearch(cancelled: Bool = false, message: String? = nil) {
+        stopAccessingCurrentDirectory()
         DispatchQueue.main.async {
             self.isSearching = false
             if cancelled {

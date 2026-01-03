@@ -8,11 +8,7 @@ struct ContentView: View {
     @StateObject private var fileSearcher = FileSearcher()
     @StateObject private var localization = LocalizationService.shared
 
-    @State private var selectedDirectoryURL: URL? {
-        didSet { if let old = oldValue, old != selectedDirectoryURL {
-            fileSearcher.stopAccessingCurrentDirectory()
-        }}
-    }
+    @State private var selectedDirectoryURL: URL?
     @State private var showingFileImporter = false
     @State private var showingExportDialog = false
     @State private var exportFormat: ExportFormat = .resultsJSON
@@ -632,8 +628,6 @@ struct ContentView: View {
 
     private func handleImport(_ result: Result<[URL], Error>) {
         if case .success(let urls) = result, let url = urls.first {
-            fileSearcher.stopAccessingCurrentDirectory()
-            _ = url.startAccessingSecurityScopedResource()
             self.selectedDirectoryURL = url
             saveBookmark(for: url)
         }
@@ -660,7 +654,6 @@ struct ContentView: View {
         var isStale = false
         if let url = try? URL(resolvingBookmarkData: data, options: .withSecurityScope, relativeTo: nil, bookmarkDataIsStale: &isStale) {
             if isStale { saveBookmark(for: url) }
-            _ = url.startAccessingSecurityScopedResource()
             self.selectedDirectoryURL = url
         }
     }
