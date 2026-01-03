@@ -30,8 +30,10 @@
 "theme_light" = "Claro";
 "theme_dark" = "Oscuro";
 "export_as" = "Exportar Como";
-"json_format" = "JSON";
-"csv_format" = "CSV";
+"export_fonts_csv" = "Exportar Pestaña Fuentes CSV";
+"export_fonts_json" = "Exportar Pestaña Fuentes JSON";
+"export_files_csv" = "Exportar Pestaña Archivos CSV";
+"export_files_json" = "Exportar Pestaña Archivos JSON";
 "font_name" = "Nombre de la Fuente";
 "file_type" = "Tipo de Archivo";
 "description" = "Descripción";
