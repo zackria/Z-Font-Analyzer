@@ -51,6 +51,27 @@ struct ContentView: View {
 
     private let bookmarkKey = "selectedDirectoryBookmark"
 
+    private struct SuggestedLocation: Identifiable {
+        let id: String
+        let name: String
+        let url: URL
+    }
+
+    private var suggestedLocations: [SuggestedLocation] {
+        var locations = [SuggestedLocation]()
+        
+        let home = FileManager.default.homeDirectoryForCurrentUser
+        locations.append(SuggestedLocation(id: "user_movies", name: "User Motion Templates", url: home.appendingPathComponent("Movies/Motion Templates.localized")))
+        
+        locations.append(SuggestedLocation(id: "sys_fcp", name: "Final Cut Pro Templates", url: URL(fileURLWithPath: "/Library/Application Support/Final Cut Pro/Templates/")))
+        
+        locations.append(SuggestedLocation(id: "sys_motion", name: "Motion Templates", url: URL(fileURLWithPath: "/Library/Application Support/Motion/Templates/")))
+        
+        locations.append(SuggestedLocation(id: "app_fcp", name: "FCP App Bundle (MotionEffect.fxp)", url: URL(fileURLWithPath: "/Applications/Final Cut Pro.app/Contents/PlugIns/MediaProviders/MotionEffect.fxp/")))
+        
+        return locations
+    }
+
     // ───────── Computed helpers ─────────
     
     private var forcedScheme: ColorScheme? {
@@ -201,11 +222,26 @@ struct ContentView: View {
 
     private var directorySelector: some View {
         HStack(spacing: 12) {
-            Button(action: { showingFileImporter = true }) {
+            Menu {
+                Button(action: { showingFileImporter = true }) {
+                    Label("Custom Folder...", systemImage: "folder.badge.plus")
+                }
+                .keyboardShortcut("o", modifiers: [.command])
+                
+                if !suggestedLocations.isEmpty {
+                    Divider()
+                    Text("Suggestions")
+                    ForEach(suggestedLocations) { location in
+                        Button(location.name) {
+                            self.selectedDirectoryURL = location.url
+                        }
+                    }
+                }
+            } label: {
                 Label("select_directory".localized, systemImage: "folder.fill")
             }
+            .menuStyle(.borderedButton)
             .disabled(fileSearcher.isSearching)
-            .keyboardShortcut("o", modifiers: [.command])
 
             if let url = selectedDirectoryURL {
                 Text(url.path)

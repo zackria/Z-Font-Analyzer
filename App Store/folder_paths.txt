@@ -1,0 +1,7 @@
+/Applications/Final Cut Pro.app/Contents/PlugIns/MediaProviders/MotionEffect.fxp/
+/Users/<<username>>/Movies/Motion Templates.localized/
+/Applications/Final Cut Pro.app/Contents/PlugIns/MediaProviders/MotionEffect.fxp/
+/Library/Application Support/Final Cut Pro/Templates/
+/Library/Application Support/Motion/Templates/
+/Applications/Final Cut Pro.app/Contents/PlugIns/MediaProviders/MotionEffect.fxp/Contents/Resources/Templates/
+/Library/Application Support/Final Cut Pro/Templates/

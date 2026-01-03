@@ -71,7 +71,21 @@ final class FileSearcherTests: XCTestCase {
     
     func testInvalidDirectory() {
         let invalidURL = URL(string: "http://google.com")!
+        
+        let expectation = XCTestExpectation(description: "Error message updated")
+        
+        fileSearcher.$errorMessage
+            .dropFirst()
+            .sink { message in
+                if message == "invalid_directory".localized {
+                    expectation.fulfill()
+                }
+            }
+            .store(in: &cancellables)
+            
         fileSearcher.startSearch(in: invalidURL, maxConcurrentOperations: 1, skipHiddenFolders: true)
+        
+        wait(for: [expectation], timeout: 2.0)
         
         XCTAssertFalse(fileSearcher.isSearching)
         XCTAssertEqual(fileSearcher.errorMessage, "invalid_directory".localized)
