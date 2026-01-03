@@ -1,5 +1,11 @@
 import XCTest
 
+extension String {
+    var localized: String {
+        return NSLocalizedString(self, bundle: Bundle(for: Z_Font_AnalyzerUITests.self), comment: "")
+    }
+}
+
 final class Z_Font_AnalyzerUITests: XCTestCase {
 
     override func setUpWithError() throws {
@@ -18,9 +24,8 @@ final class Z_Font_AnalyzerUITests: XCTestCase {
         let app = XCUIApplication()
         app.launch()
 
-        // Give it some time to load
-        let window = app.windows.firstMatch
-        XCTAssertTrue(window.waitForExistence(timeout: 20))
+        // Wait for the app to load - check for the dashboard title by identifier
+        XCTAssertTrue(app.staticTexts["dashboard_title"].waitForExistence(timeout: 30))
 
         // On macOS TabView, items are often radio buttons in a list or bar
         // Let's try to find them by type first

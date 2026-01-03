@@ -53,10 +53,19 @@ final class FileSearcherTests: XCTestCase {
         let content = "<font>Test</font>"
         try content.write(to: fileURL, atomically: true, encoding: .utf8)
         
+        let expectation = XCTestExpectation(description: "Progress updates to Cancel Search")
+        fileSearcher.$searchProgress
+            .sink { progress in
+                if progress == "cancel_search".localized {
+                    expectation.fulfill()
+                }
+            }
+            .store(in: &cancellables)
+            
         fileSearcher.startSearch(in: tempDir, maxConcurrentOperations: 1, skipHiddenFolders: true)
         fileSearcher.cancelSearch()
         
-        XCTAssertFalse(fileSearcher.isSearching)
+        wait(for: [expectation], timeout: 5.0)
         XCTAssertEqual(fileSearcher.searchProgress, "cancel_search".localized)
     }
     

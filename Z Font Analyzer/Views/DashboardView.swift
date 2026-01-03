@@ -13,6 +13,7 @@ struct DashboardView: View {
                 Text("dashboard".localized)
                     .font(.system(size: 34, weight: .bold, design: .rounded))
                     .padding(.top, 8)
+                    .accessibilityIdentifier("dashboard_title")
                 
                 // Responsive Metrics Row
                 metricsSection

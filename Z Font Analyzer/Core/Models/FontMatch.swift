@@ -8,10 +8,10 @@ struct FontMatch: Identifiable, Hashable, Codable {
     let fontName: String // The name of the font found
     let filePath: String // The full path to the file containing the font
 
-    init(id: String = UUID().uuidString, fontName: String, filePath: String) {
-        self.id = id
+    init(id: String? = nil, fontName: String, filePath: String) {
         self.fontName = fontName
         self.filePath = filePath
+        self.id = id ?? "\(fontName)|\(filePath)"
     }
 
     // CodingKeys for Codable conformance, ensuring consistent encoding/decoding.
