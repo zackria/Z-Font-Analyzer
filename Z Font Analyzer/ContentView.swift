@@ -26,6 +26,11 @@ struct ContentView: View {
     @State private var debouncedResults: [FontMatch] = []
     
     @State private var fontSortOrder = [KeyPathComparator(\FontSummaryRow.fontName)]
+    @State private var downloadingFonts: Set<String> = []
+    
+    // Download failure reporting
+    @State private var showingDownloadFailureAlert = false
+    @State private var failedFontsList: [String] = []
     
     @AppStorage("maxConcurrentOperations") private var maxConcurrentOperations = 8
     @AppStorage("skipHiddenFolders")       private var skipHiddenFolders       = true
@@ -120,6 +125,11 @@ struct ContentView: View {
                 performSearch() // Initial load
             }
             .onDisappear(perform: fileSearcher.stopAccessingCurrentDirectory)
+            .alert("download_failure_title".localized, isPresented: $showingDownloadFailureAlert) {
+                Button("done".localized, role: .cancel) { }
+            } message: {
+                Text("\("download_failure_message".localized)\n\n\(failedFontsList.joined(separator: ", "))")
+            }
             .onChange(of: searchText) { _, _ in
                 scheduleSearch()
             }
@@ -208,6 +218,16 @@ struct ContentView: View {
             .keyboardShortcut("e", modifiers: [.command])
 
             searchToggleButton
+            
+            if selectedTab == 1 && !fileSearcher.foundFonts.isEmpty && debouncedFontsSummary.contains(where: { $0.existsInSystem == false }) {
+                Button(action: {
+                    print("Download All Missing button pressed")
+                    downloadAllMissingFonts()
+                }) {
+                    Label("download_all".localized, systemImage: "arrow.down.circle")
+                }
+                .disabled(fileSearcher.isSearching)
+            }
         }
     }
 
@@ -235,24 +255,38 @@ struct ContentView: View {
 
     private var searchStatusArea: some View {
         HStack {
-            if fileSearcher.isSearching {
-                ProgressView().controlSize(.small).padding(.trailing, 4)
+            let isBusy = fileSearcher.isSearching || !downloadingFonts.isEmpty
+            let isNotFound = fileSearcher.searchProgress == "download_not_found".localized
+            
+            if isBusy {
+                ProgressView().controlSize(.small).padding(.trailing, 6)
+            } else if isNotFound {
+                Image(systemName: "exclamationmark.triangle.fill")
+                    .foregroundColor(.orange)
+                    .font(.title3)
             }
+            
             Text(fileSearcher.searchProgress)
-                .font(.caption)
-                .foregroundColor(.secondary)
+                .font(isNotFound ? .title3.bold() : (isBusy ? .headline : .caption))
+                .foregroundColor(isNotFound ? .red : (isBusy ? .primary : .secondary))
+                .multilineTextAlignment(.leading)
             
             if let error = fileSearcher.errorMessage {
                 Text(error)
                     .foregroundColor(.red)
-                    .font(.caption)
+                    .font(.body.bold())
                     .padding(.leading, 8)
             }
             Spacer()
         }
+        .padding(.horizontal, 12)
+        .padding(.vertical, 12)
+        .background(
+            RoundedRectangle(cornerRadius: 8)
+                .fill(isNotFound ? Color.red.opacity(0.1) : (isBusy ? Color.accentColor.opacity(0.1) : Color.clear))
+        )
         .padding(.horizontal)
-        .padding(.top, 8)
-        .padding(.bottom, 4)
+        .animation(.easeInOut, value: fileSearcher.searchProgress)
     }
 
     private var searchFieldArea: some View {
@@ -281,7 +315,7 @@ struct ContentView: View {
             TableColumn("count".localized, value: \.count) { row in
                 Text("\(row.count)")
             }
-            TableColumn("font_exists".localized) { row in
+            TableColumn("font_exists".localized, value: \.existsSortValue) { row in
                 if let exists = row.existsInSystem {
                     Image(systemName: exists ? "checkmark.circle.fill" : "xmark.circle.fill")
                         .foregroundColor(exists ? .green : .red)
@@ -289,9 +323,26 @@ struct ContentView: View {
                     ProgressView().controlSize(.small)
                 }
             }
-            TableColumn("real_font_name".localized) { row in
+            TableColumn("real_font_name".localized, value: \.realNameSortValue) { row in
                 Text(row.systemFontName ?? "—")
                     .foregroundColor(.secondary)
+            }
+            TableColumn("actions".localized) { row in
+                if row.existsInSystem == false {
+                    if downloadingFonts.contains(row.fontName) {
+                        ProgressView().controlSize(.small)
+                    } else {
+                        Button(action: { 
+                            print("Download button pressed for font: \(row.fontName)")
+                            downloadSpecificFont(row.fontName) 
+                        }) {
+                            Image(systemName: "arrow.down.circle")
+                        }
+                        .buttonStyle(.plain)
+                        .foregroundColor(.accentColor)
+                        .help("download".localized)
+                    }
+                }
             }
         }
         .onChange(of: fontSortOrder) { _, newOrder in
@@ -381,7 +432,7 @@ struct ContentView: View {
                 let match = SystemFontService.shared.findBestMatch(for: fontName)
                 PersistenceService.shared.updateSystemFontInfo(
                     fontName: fontName,
-                    exists: match.exists,
+                    isInstalled: match.exists,
                     realName: match.realName
                 )
             }
@@ -389,6 +440,63 @@ struct ContentView: View {
             // Final refresh to show results
             DispatchQueue.main.async {
                 self.performSearch()
+            }
+        }
+    }
+
+    private func downloadSpecificFont(_ fontName: String) {
+        DispatchQueue.main.async {
+            self.fileSearcher.searchProgress = "download_started".localized
+            self.downloadingFonts.insert(fontName)
+        }
+        
+        SystemFontService.shared.downloadFont(fontName) { success in
+            DispatchQueue.main.async {
+                self.fileSearcher.searchProgress = success ? "download_finished".localized : "download_not_found".localized
+                self.downloadingFonts.remove(fontName)
+                if success {
+                    self.checkSystemFontsInBackground()
+                }
+            }
+        }
+    }
+
+    private func downloadAllMissingFonts() {
+        let missing = debouncedFontsSummary
+            .filter { $0.existsInSystem == false }
+            .map { $0.fontName }
+        
+        print("downloadAllMissingFonts called. Missing count: \(missing.count). Fonts: \(missing)")
+        
+        guard !missing.isEmpty else { return }
+        
+        DispatchQueue.main.async {
+            self.fileSearcher.searchProgress = "download_started".localized
+            for font in missing {
+                self.downloadingFonts.insert(font)
+            }
+        }
+        
+        SystemFontService.shared.downloadFonts(missing) { success in
+            DispatchQueue.main.async {
+                // Check which fonts are still missing after the attempt
+                let stillMissing = missing.filter { font in
+                    !SystemFontService.shared.findBestMatch(for: font).exists
+                }
+                
+                self.fileSearcher.searchProgress = success ? "download_finished".localized : "download_not_found".localized
+                for font in missing {
+                    self.downloadingFonts.remove(font)
+                }
+                
+                if !stillMissing.isEmpty {
+                    self.failedFontsList = stillMissing
+                    self.showingDownloadFailureAlert = true
+                }
+                
+                if success {
+                    self.checkSystemFontsInBackground()
+                }
             }
         }
     }
@@ -448,6 +556,14 @@ struct FontSummaryRow: Identifiable {
     let existsInSystem: Bool?
     let systemFontName: String?
 
+    init(fontName: String, fileType: String, count: Int, existsInSystem: Bool? = nil, systemFontName: String? = nil) {
+        self.fontName = fontName
+        self.fileType = fileType
+        self.count = count
+        self.existsInSystem = existsInSystem
+        self.systemFontName = systemFontName
+    }
+
     var description: String {
         switch fileType.lowercased() {
         case ".moti": return "motion_title".localized
@@ -456,5 +572,15 @@ struct FontSummaryRow: Identifiable {
         case ".moef": return "motion_effect".localized
         default: return "unknown".localized
         }
+    }
+    
+    // Sorting helpers
+    var existsSortValue: Int {
+        guard let exists = existsInSystem else { return 0 }
+        return exists ? 1 : -1
+    }
+    
+    var realNameSortValue: String {
+        systemFontName ?? ""
     }
 }

@@ -57,3 +57,6 @@
 "access_error" = "无法访问目录：%@";
 "font_exists" = "字体已安装";
 "real_font_name" = "系统字体名称";
+"download_all" = "下载所有缺失字体";
+"download" = "下载";
+"actions" = "操作";

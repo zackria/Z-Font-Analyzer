@@ -57,3 +57,6 @@
 "access_error" = "Verzeichnis konnte nicht zugegriffen werden: %@";
 "font_exists" = "Schriftart Existiert";
 "real_font_name" = "Echter Schriftname";
+"download_all" = "Alle Fehlenden Herunterladen";
+"download" = "Herunterladen";
+"actions" = "Aktionen";

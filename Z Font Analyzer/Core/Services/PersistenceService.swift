@@ -6,7 +6,7 @@ final class PersistenceService {
     private var db: OpaquePointer?
     
     // Serial queue for database operations to ensure thread safety
-    private let dbQueue = DispatchQueue(label: "com.zfontanalyzer.dbQueue")
+    private let dbQueue = DispatchQueue(label: "com.zfontanalyzer.dbQueue", qos: .userInitiated)
     
     private init() {
         setupDatabase()
@@ -17,10 +17,16 @@ final class PersistenceService {
         guard let documentsURL = fileManager.urls(for: .documentDirectory, in: .userDomainMask).first else { return }
         let dbURL = documentsURL.appendingPathComponent("fonts.sqlite")
         
-        if sqlite3_open(dbURL.path, &db) != SQLITE_OK {
+        let flags = SQLITE_OPEN_READWRITE | SQLITE_OPEN_CREATE | SQLITE_OPEN_FULLMUTEX
+        if sqlite3_open_v2(dbURL.path, &db, flags, nil) != SQLITE_OK {
             print("Error opening database")
             return
         }
+        
+        // Optimize SQLite for performance and to reduce system file-access warnings
+        sqlite3_exec(db, "PRAGMA journal_mode=WAL;", nil, nil, nil)
+        sqlite3_exec(db, "PRAGMA synchronous=NORMAL;", nil, nil, nil)
+        sqlite3_exec(db, "PRAGMA temp_store=MEMORY;", nil, nil, nil)
         
         // Create FTS5 virtual table for high-performance searching
         let createTableQuery = """
@@ -39,9 +45,9 @@ final class PersistenceService {
         
         // Create table for system font cache
         let createCacheTableQuery = """
-        CREATE TABLE IF NOT EXISTS font_system_info (
+        CREATE TABLE IF NOT EXISTS font_system_cache (
             fontName TEXT PRIMARY KEY,
-            exists INTEGER,
+            isInstalled INTEGER,
             realName TEXT
         );
         """
@@ -52,18 +58,18 @@ final class PersistenceService {
         dbQueue.sync {
             let deleteQuery = "DELETE FROM fonts_fts;"
             sqlite3_exec(db, deleteQuery, nil, nil, nil)
-            let deleteCacheQuery = "DELETE FROM font_system_info;"
+            let deleteCacheQuery = "DELETE FROM font_system_cache;"
             sqlite3_exec(db, deleteCacheQuery, nil, nil, nil)
         }
     }
 
-    func updateSystemFontInfo(fontName: String, exists: Bool, realName: String?) {
+    func updateSystemFontInfo(fontName: String, isInstalled: Bool, realName: String?) {
         dbQueue.sync {
-            let query = "INSERT OR REPLACE INTO font_system_info (fontName, exists, realName) VALUES (?, ?, ?);"
+            let query = "INSERT OR REPLACE INTO font_system_cache (fontName, isInstalled, realName) VALUES (?, ?, ?);"
             var statement: OpaquePointer?
             if sqlite3_prepare_v2(db, query, -1, &statement, nil) == SQLITE_OK {
                 sqlite3_bind_text(statement, 1, (fontName as NSString).utf8String, -1, nil)
-                sqlite3_bind_int(statement, 2, exists ? 1 : 0)
+                sqlite3_bind_int(statement, 2, isInstalled ? 1 : 0)
                 if let realName = realName {
                     sqlite3_bind_text(statement, 3, (realName as NSString).utf8String, -1, nil)
                 } else {
@@ -106,9 +112,9 @@ final class PersistenceService {
             let searchQuery: String
             
             if query.isEmpty {
-                searchQuery = "SELECT fontName, filePath FROM fonts_fts LIMIT ?;"
+                searchQuery = "SELECT rowid, fontName, filePath FROM fonts_fts LIMIT ?;"
             } else {
-                searchQuery = "SELECT fontName, filePath FROM fonts_fts WHERE fonts_fts MATCH ? ORDER BY rank LIMIT ?;"
+                searchQuery = "SELECT rowid, fontName, filePath FROM fonts_fts WHERE fonts_fts MATCH ? ORDER BY rank LIMIT ?;"
             }
             
             var statement: OpaquePointer?
@@ -122,9 +128,10 @@ final class PersistenceService {
                 sqlite3_bind_int(statement, bindIndex, Int32(limit))
                 
                 while sqlite3_step(statement) == SQLITE_ROW {
-                    let fontName = String(cString: sqlite3_column_text(statement, 0))
-                    let filePath = String(cString: sqlite3_column_text(statement, 1))
-                    results.append(FontMatch(fontName: fontName, filePath: filePath))
+                    let rowId = sqlite3_column_int64(statement, 0)
+                    let fontName = String(cString: sqlite3_column_text(statement, 1))
+                    let filePath = String(cString: sqlite3_column_text(statement, 2))
+                    results.append(FontMatch(id: String(rowId), fontName: fontName, filePath: filePath))
                 }
             }
             sqlite3_finalize(statement)
@@ -150,14 +157,15 @@ final class PersistenceService {
     func getAllFonts(limit: Int = 1000) -> [FontMatch] {
         var results = [FontMatch]()
         dbQueue.sync {
-            let query = "SELECT fontName, filePath FROM fonts_fts LIMIT ?;"
+            let query = "SELECT rowid, fontName, filePath FROM fonts_fts LIMIT ?;"
             var statement: OpaquePointer?
             if sqlite3_prepare_v2(db, query, -1, &statement, nil) == SQLITE_OK {
                 sqlite3_bind_int(statement, 1, Int32(limit))
                 while sqlite3_step(statement) == SQLITE_ROW {
-                    let fontName = String(cString: sqlite3_column_text(statement, 0))
-                    let filePath = String(cString: sqlite3_column_text(statement, 1))
-                    results.append(FontMatch(fontName: fontName, filePath: filePath))
+                    let rowId = sqlite3_column_int64(statement, 0)
+                    let fontName = String(cString: sqlite3_column_text(statement, 1))
+                    let filePath = String(cString: sqlite3_column_text(statement, 2))
+                    results.append(FontMatch(id: String(rowId), fontName: fontName, filePath: filePath))
                 }
             }
             sqlite3_finalize(statement)
@@ -173,17 +181,17 @@ final class PersistenceService {
             
             if query.isEmpty {
                 searchQuery = """
-                SELECT f.fontName, f.fileType, COUNT(*) as count, s.exists, s.realName
+                SELECT f.fontName, f.fileType, COUNT(*) as count, s.isInstalled, s.realName
                 FROM fonts_fts f
-                LEFT JOIN font_system_info s ON f.fontName = s.fontName
+                LEFT JOIN font_system_cache s ON f.fontName = s.fontName
                 GROUP BY f.fontName, f.fileType 
                 ORDER BY f.fontName;
                 """
             } else {
                 searchQuery = """
-                SELECT f.fontName, f.fileType, COUNT(*) as count, s.exists, s.realName
+                SELECT f.fontName, f.fileType, COUNT(*) as count, s.isInstalled, s.realName
                 FROM fonts_fts f
-                LEFT JOIN font_system_info s ON f.fontName = s.fontName
+                LEFT JOIN font_system_cache s ON f.fontName = s.fontName
                 WHERE f.fontName IN (SELECT fontName FROM fonts_fts WHERE fonts_fts MATCH ?) 
                 GROUP BY f.fontName, f.fileType 
                 ORDER BY f.fontName;

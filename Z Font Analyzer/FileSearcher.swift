@@ -21,11 +21,11 @@ class FileSearcher: ObservableObject {
     private let fileManager = FileManager.default // FileManager instance for file system operations
     
     // Concurrent queue for parsing files, allowing multiple files to be processed simultaneously.
-    private var parsingQueue = DispatchQueue(label: "com.fontfinder.parsingQueue", attributes: .concurrent)
+    private var parsingQueue = DispatchQueue(label: "com.fontfinder.parsingQueue", qos: .userInitiated, attributes: .concurrent)
     // DispatchGroup to track completion of all file processing tasks.
     private var dispatchGroup = DispatchGroup()
     // Serial queue to synchronize access to `resultsAccumulator` and temporary count dictionaries.
-    private var resultsAccessQueue = DispatchQueue(label: "com.fontfinder.resultsAccessQueue")
+    private var resultsAccessQueue = DispatchQueue(label: "com.fontfinder.resultsAccessQueue", qos: .userInitiated)
     // Temporary array to accumulate results before publishing to `foundFonts`.
     // We'll limit the in-memory results to avoid huge memory usage.
     private var resultsAccumulator = [FontMatch]()
@@ -65,13 +65,13 @@ class FileSearcher: ObservableObject {
             self.fontNameCounts = [:]
             self.fontNameToFileType = [:]
             self.searchProgress = "starting_search".localized
+            self.totalFoundCount = 0
         }
-
+        
         // Clear the database and accumulator
         PersistenceService.shared.clearDatabase()
         resultsAccessQueue.sync {
             self.resultsAccumulator = []
-            self.totalFoundCount = 0
         }
 
         // Perform the search operation on a background queue to keep the UI responsive.
@@ -117,9 +117,8 @@ class FileSearcher: ObservableObject {
                 }
 
                 self.dispatchGroup.enter() // Indicate a new task has started
+                semaphore.wait() // Wait before submission to avoid thread pool block
                 self.parsingQueue.async {
-                    semaphore.wait() // Acquire a semaphore, limiting concurrent tasks
-
                     let matchPairs = self.processFile(at: fileURL) // Process the file
 
                     self.resultsAccessQueue.sync { // Synchronize access to shared accumulators
@@ -138,17 +137,21 @@ class FileSearcher: ObservableObject {
                         
                         // Batch insert to database
                         if batchBuffer.count >= batchSize || (processedCount == totalFiles && !batchBuffer.isEmpty) {
+                            let countToAdd = batchBuffer.count
                             PersistenceService.shared.insertFontsBatch(batchBuffer)
-                            self.totalFoundCount += batchBuffer.count
+                            DispatchQueue.main.async {
+                                self.totalFoundCount += countToAdd
+                            }
                             self.resultsAccumulator.append(contentsOf: batchBuffer.map { $0.0 })
                             batchBuffer.removeAll()
                         }
-                    }
 
-                    // Update progress on main thread periodically to avoid excessive UI updates.
-                    if processedCount % max(1, totalFiles / 50) == 0 || processedCount == totalFiles {
-                        DispatchQueue.main.async {
-                            self.searchProgress = String(format: "processed_status".localized, processedCount, totalFiles)
+                        // Update progress on main thread periodically to avoid excessive UI updates.
+                        if processedCount % max(1, totalFiles / 50) == 0 || processedCount == totalFiles {
+                            let currentProcessed = processedCount
+                            DispatchQueue.main.async {
+                                self.searchProgress = String(format: "processed_status".localized, currentProcessed, totalFiles)
+                            }
                         }
                     }
 
@@ -185,8 +188,10 @@ class FileSearcher: ObservableObject {
     /// Cancels the ongoing search operation.
     func cancelSearch() {
         shouldCancelSearch = true // Set the cancellation flag
-        self.searchProgress = "cancel_search".localized
-        self.isSearching = false
+        DispatchQueue.main.async {
+            self.searchProgress = "cancel_search".localized
+            self.isSearching = false
+        }
     }
     
     /// Stops accessing the current security-scoped directory, if any.

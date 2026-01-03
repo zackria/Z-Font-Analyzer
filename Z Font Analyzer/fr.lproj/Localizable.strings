@@ -57,3 +57,6 @@
 "access_error" = "Impossible d'accéder au répertoire : %@";
 "font_exists" = "Police Existante";
 "real_font_name" = "Nom Réel de la Police";
+"download_all" = "Télécharger Tout ce qui Manque";
+"download" = "Télécharger";
+"actions" = "Actions";

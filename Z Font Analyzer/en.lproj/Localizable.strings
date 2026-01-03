@@ -57,3 +57,13 @@
 "access_error" = "Could not access directory: %@";
 "font_exists" = "Font Exists";
 "real_font_name" = "Real Font Name";
+"download_all" = "Download All Missing";
+"download" = "Download";
+"actions" = "Actions";
+"download_started" = "Font download request sent to system...";
+"download_finished" = "Font download process finished.";
+"download_not_found" = "Font not found on system servers. It must be installed manually.";
+"download_failure_title" = "Download Incomplete";
+"download_failure_message" = "The following fonts were not found on Apple's servers and must be installed manually:";
+
+
