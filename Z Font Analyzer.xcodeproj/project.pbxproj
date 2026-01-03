@@ -6,10 +6,6 @@
 	objectVersion = 77;
 	objects = {
 
-/* Begin PBXBuildFile section */
-		BF5289302DE3FFFF0045EA8B /* design.md in Resources */ = {isa = PBXBuildFile; fileRef = BF52892F2DE3FFF70045EA8B /* design.md */; };
-/* End PBXBuildFile section */
-
 /* Begin PBXContainerItemProxy section */
 		BF5289102DE360DA0045EA8B /* PBXContainerItemProxy */ = {
 			isa = PBXContainerItemProxy;
@@ -31,7 +27,6 @@
 		BF5288FF2DE360D80045EA8B /* Z Font Analyzer.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = "Z Font Analyzer.app"; sourceTree = BUILT_PRODUCTS_DIR; };
 		BF52890F2DE360DA0045EA8B /* Z Font AnalyzerTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = "Z Font AnalyzerTests.xctest"; sourceTree = BUILT_PRODUCTS_DIR; };
 		BF5289192DE360DA0045EA8B /* Z Font AnalyzerUITests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = "Z Font AnalyzerUITests.xctest"; sourceTree = BUILT_PRODUCTS_DIR; };
-		BF52892F2DE3FFF70045EA8B /* design.md */ = {isa = PBXFileReference; lastKnownFileType = net.daringfireball.markdown; path = design.md; sourceTree = "<group>"; };
 		BFE0E9CF2F0873E800317779 /* Z Font Analyzer.xctestplan */ = {isa = PBXFileReference; lastKnownFileType = text; path = "Z Font Analyzer.xctestplan"; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
@@ -82,7 +77,6 @@
 			isa = PBXGroup;
 			children = (
 				BFE0E9CF2F0873E800317779 /* Z Font Analyzer.xctestplan */,
-				BF52892F2DE3FFF70045EA8B /* design.md */,
 				BF5289012DE360D80045EA8B /* Z Font Analyzer */,
 				BF5289122DE360DA0045EA8B /* Z Font AnalyzerTests */,
 				BF52891C2DE360DA0045EA8B /* Z Font AnalyzerUITests */,
@@ -225,7 +219,6 @@
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
-				BF5289302DE3FFFF0045EA8B /* design.md in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -506,10 +499,10 @@
 				PRODUCT_BUNDLE_IDENTIFIER = "Ulitmate-Learning-Machine.Z-Font-AnalyzerTests";
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SDKROOT = auto;
-				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator macosx xros xrsimulator";
+				SUPPORTED_PLATFORMS = macosx;
+				SUPPORTS_MACCATALYST = NO;
 				SWIFT_EMIT_LOC_STRINGS = NO;
 				SWIFT_VERSION = 5.0;
-				TARGETED_DEVICE_FAMILY = "1,2,7";
 				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/Z Font Analyzer.app/$(BUNDLE_EXECUTABLE_FOLDER_PATH)/Z Font Analyzer";
 				XROS_DEPLOYMENT_TARGET = 2.4;
 			};
@@ -530,10 +523,10 @@
 				PRODUCT_BUNDLE_IDENTIFIER = "Ulitmate-Learning-Machine.Z-Font-AnalyzerTests";
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SDKROOT = auto;
-				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator macosx xros xrsimulator";
+				SUPPORTED_PLATFORMS = macosx;
+				SUPPORTS_MACCATALYST = NO;
 				SWIFT_EMIT_LOC_STRINGS = NO;
 				SWIFT_VERSION = 5.0;
-				TARGETED_DEVICE_FAMILY = "1,2,7";
 				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/Z Font Analyzer.app/$(BUNDLE_EXECUTABLE_FOLDER_PATH)/Z Font Analyzer";
 				XROS_DEPLOYMENT_TARGET = 2.4;
 			};
