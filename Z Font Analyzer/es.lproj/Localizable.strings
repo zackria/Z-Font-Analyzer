@@ -62,7 +62,7 @@
 "actions" = "Acciones";
 "download_started" = "Solicitud de descarga de fuente enviada al sistema...";
 "download_finished" = "Proceso de descarga de fuente finalizado.";
-"download_not_found" = "Fuente no encontrada en los servidores del sistema. Debe instalarse manualmente.";
+"download_not_found" = "Fuente '%@' no encontrada en los servidores del sistema. Debe instalarse manualmente.";
 "download_failure_title" = "Descarga Incompleta";
 "download_failure_message" = "Las siguientes fuentes no se encontraron en los servidores de Apple y deben instalarse manualmente:";
 "copy_to_clipboard" = "Copiar al portapapeles";

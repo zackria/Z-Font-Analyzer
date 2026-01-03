@@ -28,9 +28,11 @@ struct ContentView: View {
     @State private var fontSortOrder = [KeyPathComparator(\FontSummaryRow.fontName)]
     @State private var downloadingFonts: Set<String> = []
     
-    // Download failure reporting
     @State private var showingDownloadFailureAlert = false
     @State private var failedFontsList: [String] = []
+    
+    @State private var statusClearTask: Task<Void, Never>? = nil
+    @State private var isShowingWarningStatus = false
     
     @AppStorage("maxConcurrentOperations") private var maxConcurrentOperations = 8
     @AppStorage("skipHiddenFolders")       private var skipHiddenFolders       = true
@@ -256,7 +258,7 @@ struct ContentView: View {
 
     private var searchStatusArea: some View {
         let isBusy = fileSearcher.isSearching || !downloadingFonts.isEmpty
-        let isNotFound = fileSearcher.searchProgress == "download_not_found".localized
+        let isNotFound = isShowingWarningStatus
         
         return HStack {
             if isBusy {
@@ -453,10 +455,29 @@ struct ContentView: View {
         
         SystemFontService.shared.downloadFont(fontName) { success in
             DispatchQueue.main.async {
-                self.fileSearcher.searchProgress = success ? "download_finished".localized : "download_not_found".localized
+                let status = success ? "download_finished".localized : String(format: "download_not_found".localized, fontName)
+                self.updateStatus(status, isWarning: !success)
                 self.downloadingFonts.remove(fontName)
                 if success {
                     self.checkSystemFontsInBackground()
+                }
+            }
+        }
+    }
+    
+    private func updateStatus(_ message: String, isWarning: Bool = false) {
+        statusClearTask?.cancel()
+        fileSearcher.searchProgress = message
+        isShowingWarningStatus = isWarning
+        
+        if isWarning {
+            statusClearTask = Task {
+                try? await Task.sleep(nanoseconds: 10 * 1_000_000_000) // 10 seconds
+                if !Task.isCancelled {
+                    withAnimation {
+                        fileSearcher.searchProgress = ""
+                        isShowingWarningStatus = false
+                    }
                 }
             }
         }
@@ -485,7 +506,17 @@ struct ContentView: View {
                     !SystemFontService.shared.findBestMatch(for: font).exists
                 }
                 
-                self.fileSearcher.searchProgress = success ? "download_finished".localized : "download_not_found".localized
+                let status: String
+                if stillMissing.isEmpty {
+                    status = "download_finished".localized
+                } else if stillMissing.count == 1 {
+                    status = String(format: "download_not_found".localized, stillMissing[0])
+                } else {
+                    status = String(format: "download_not_found".localized, "Multiple Fonts")
+                }
+                
+                self.updateStatus(status, isWarning: !stillMissing.isEmpty)
+                
                 for font in missing {
                     self.downloadingFonts.remove(font)
                 }
@@ -520,7 +551,7 @@ struct ContentView: View {
 
     private func handleExport(_ result: Result<URL, Error>) {
         if case .success = result {
-            fileSearcher.searchProgress = "export_success".localized
+            self.updateStatus("export_success".localized)
         } else if case .failure(let error) = result {
             fileSearcher.errorMessage = "\("export_failed".localized): \(error.localizedDescription)"
         }
