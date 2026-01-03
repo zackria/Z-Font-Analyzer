@@ -5,7 +5,7 @@ import XCTest
 extension String {
     var localized: String {
         // Find the app bundle by identifier to avoid linking issues with PersistenceService.self in UITests
-        if let bundle = Bundle(identifier: "Ulitmate-Learning-Machine.Z-Font-Analyzer") {
+        if let bundle = Bundle(identifier: "com.binaryboots.zfontanalyzer") {
             return NSLocalizedString(self, bundle: bundle, comment: "")
         }
         // Fallback to capitalizing if not found (matching most titles)
