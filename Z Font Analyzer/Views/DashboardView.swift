@@ -38,22 +38,64 @@ struct DashboardView: View {
     @ViewBuilder
     private var metricsSection: some View {
         let columns = viewWidth > 800 ? 3 : (viewWidth > 500 ? 2 : 1)
-        LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 20), count: columns), spacing: 20) {
-            DashboardCard(
-                title: "files_processed".localized,
-                value: "\(fileSearcher.totalFoundCount)",
-                systemImage: "doc.on.doc"
-            )
-            DashboardCard(
-                title: "unique_fonts".localized,
-                value: "\(fileSearcher.fontNameCounts.keys.count)",
-                systemImage: "textformat"
-            )
-            DashboardCard(
-                title: "file_types".localized,
-                value: "\(fileSearcher.fileTypeCounts.count)",
-                systemImage: "folder.fill"
-            )
+        let assetColumns = viewWidth > 500 ? 4 : 2
+        
+        VStack(spacing: 24) {
+            LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 20), count: columns), spacing: 20) {
+                DashboardCard(
+                    title: "files_processed".localized,
+                    value: "\(fileSearcher.totalFoundCount)",
+                    systemImage: "doc.on.doc"
+                )
+                DashboardCard(
+                    title: "unique_fonts".localized,
+                    value: "\(fileSearcher.fontNameCounts.keys.count)",
+                    systemImage: "textformat"
+                )
+                DashboardCard(
+                    title: "file_types".localized,
+                    value: "\(fileSearcher.fileTypeCounts.count)",
+                    systemImage: "folder.fill"
+                )
+            }
+            
+            // Motion Assets Detail Row
+            LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 16), count: assetColumns), spacing: 16) {
+                AssetDetailCard(title: "motion_title".localized, count: fileSearcher.fileTypeCounts[".moti"] ?? 0, icon: "text.alignleft", color: .blue)
+                AssetDetailCard(title: "motion_effect".localized, count: fileSearcher.fileTypeCounts[".moef"] ?? 0, icon: "wand.and.stars", color: .purple)
+                AssetDetailCard(title: "motion_generator".localized, count: fileSearcher.fileTypeCounts[".motn"] ?? 0, icon: "gearshape.2.fill", color: .orange)
+                AssetDetailCard(title: "motion_transition".localized, count: fileSearcher.fileTypeCounts[".motr"] ?? 0, icon: "arrow.left.and.right", color: .green)
+            }
+        }
+    }
+    
+    // Sub-component for Asset Details
+    struct AssetDetailCard: View {
+        let title: String
+        let count: Int
+        let icon: String
+        let color: Color
+        
+        var body: some View {
+            VStack(alignment: .leading, spacing: 12) {
+                HStack {
+                    Image(systemName: icon)
+                        .font(.title2)
+                        .foregroundColor(color)
+                    Spacer()
+                    Text("\(count)")
+                        .font(.title3.bold())
+                }
+                
+                Text(title)
+                    .font(.caption)
+                    .fontWeight(.medium)
+                    .foregroundColor(.secondary)
+                    .lineLimit(1)
+            }
+            .padding(16)
+            .background(RoundedRectangle(cornerRadius: 12).fill(Color(nsColor: .controlBackgroundColor)))
+            .shadow(color: Color.black.opacity(0.04), radius: 4, x: 0, y: 2)
         }
     }
     

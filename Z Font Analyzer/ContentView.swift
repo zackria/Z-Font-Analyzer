@@ -63,7 +63,9 @@ struct ContentView: View {
                 headerControls
                 
                 // MARK: - Search Status
-                searchStatusArea
+                if selectedTab == 1 || fileSearcher.isSearching || !downloadingFonts.isEmpty {
+                    searchStatusArea
+                }
 
                 // MARK: - Search Field (Only show if not on Dashboard)
                 if selectedTab != 0 {
@@ -125,10 +127,9 @@ struct ContentView: View {
                 performSearch() // Initial load
             }
             .onDisappear(perform: fileSearcher.stopAccessingCurrentDirectory)
-            .alert("download_failure_title".localized, isPresented: $showingDownloadFailureAlert) {
-                Button("done".localized, role: .cancel) { }
-            } message: {
-                Text("\("download_failure_message".localized)\n\n\(failedFontsList.joined(separator: ", "))")
+            .sheet(isPresented: $showingDownloadFailureAlert) {
+                DownloadFailureSheet(failedFonts: failedFontsList)
+                    .environmentObject(localization)
             }
             .onChange(of: searchText) { _, _ in
                 scheduleSearch()
@@ -254,10 +255,10 @@ struct ContentView: View {
     }
 
     private var searchStatusArea: some View {
-        HStack {
-            let isBusy = fileSearcher.isSearching || !downloadingFonts.isEmpty
-            let isNotFound = fileSearcher.searchProgress == "download_not_found".localized
-            
+        let isBusy = fileSearcher.isSearching || !downloadingFonts.isEmpty
+        let isNotFound = fileSearcher.searchProgress == "download_not_found".localized
+        
+        return HStack {
             if isBusy {
                 ProgressView().controlSize(.small).padding(.trailing, 6)
             } else if isNotFound {
@@ -584,3 +585,76 @@ struct FontSummaryRow: Identifiable {
         systemFontName ?? ""
     }
 }
+
+// MARK: - Download Failure View
+
+struct DownloadFailureSheet: View {
+    let failedFonts: [String]
+    @Environment(\.dismiss) var dismiss
+    @State private var showingCopyToast = false
+    
+    var body: some View {
+        VStack(spacing: 20) {
+            VStack(alignment: .leading, spacing: 8) {
+                Text("download_failure_title".localized)
+                    .font(.title2.bold())
+                
+                Text("download_failure_message".localized)
+                    .font(.body)
+                    .foregroundColor(.secondary)
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+            
+            VStack(alignment: .trailing, spacing: 8) {
+                ScrollView {
+                    Text(failedFonts.joined(separator: "\n"))
+                        .font(.system(.body, design: .monospaced))
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .textSelection(.enabled)
+                        .padding(12)
+                }
+                .background(Color(nsColor: .textBackgroundColor))
+                .cornerRadius(8)
+                .overlay(
+                    RoundedRectangle(cornerRadius: 8)
+                        .stroke(Color.secondary.opacity(0.3), lineWidth: 1)
+                )
+                
+                Button(action: copyToClipboard) {
+                    HStack(spacing: 4) {
+                        Image(systemName: showingCopyToast ? "checkmark" : "doc.on.doc")
+                        Text(showingCopyToast ? "copied".localized : "copy_to_clipboard".localized)
+                    }
+                    .font(.subheadline)
+                    .foregroundColor(.accentColor)
+                }
+                .buttonStyle(.plain)
+            }
+            
+            Button("done".localized) {
+                dismiss()
+            }
+            .buttonStyle(.borderedProminent)
+            .controlSize(.large)
+        }
+        .padding(30)
+        .frame(width: 500, height: 600)
+    }
+    
+    private func copyToClipboard() {
+        let pasteboard = NSPasteboard.general
+        pasteboard.clearContents()
+        pasteboard.setString(failedFonts.joined(separator: "\n"), forType: .string)
+        
+        withAnimation {
+            showingCopyToast = true
+        }
+        
+        DispatchQueue.main.asyncAfter(deadline: .now() + 2) {
+            withAnimation {
+                showingCopyToast = false
+            }
+        }
+    }
+}
+
