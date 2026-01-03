@@ -241,5 +241,26 @@ final class PersistenceService {
         }
         return results
     }
+    }
+
+    // MARK: - Async Support
+    
+    func getFilteredFontsSummaryAsync(query: String) async -> [FontSummaryRow] {
+        return await withCheckedContinuation { continuation in
+            DispatchQueue.global(qos: .userInitiated).async {
+                let result = self.getFilteredFontsSummary(query: query)
+                continuation.resume(returning: result)
+            }
+        }
+    }
+    
+    func searchFontsAsync(query: String, limit: Int = 1000) async -> [FontMatch] {
+        return await withCheckedContinuation { continuation in
+            DispatchQueue.global(qos: .userInitiated).async {
+                let result = self.searchFonts(query: query, limit: limit)
+                continuation.resume(returning: result)
+            }
+        }
+    }
 }
 
