@@ -27,6 +27,9 @@ final class PersistenceService {
         sqlite3_exec(db, "PRAGMA journal_mode=WAL;", nil, nil, nil)
         sqlite3_exec(db, "PRAGMA synchronous=NORMAL;", nil, nil, nil)
         sqlite3_exec(db, "PRAGMA temp_store=MEMORY;", nil, nil, nil)
+        sqlite3_exec(db, "PRAGMA cache_size=-5000;", nil, nil, nil) // 5MB cache
+        sqlite3_exec(db, "PRAGMA mmap_size=268435456;", nil, nil, nil) // 256MB mmap
+        sqlite3_exec(db, "PRAGMA page_size=4096;", nil, nil, nil)
         
         // Create FTS5 virtual table for high-performance searching
         let createTableQuery = """
@@ -121,7 +124,8 @@ final class PersistenceService {
             if sqlite3_prepare_v2(db, searchQuery, -1, &statement, nil) == SQLITE_OK {
                 var bindIndex: Int32 = 1
                 if !query.isEmpty {
-                    let ftsQuery = "\(escapedQuery)*"
+                    // Wrap query in quotes to handle special characters like - or spaces
+                    let ftsQuery = "\"\(escapedQuery)\"*"
                     sqlite3_bind_text(statement, bindIndex, (ftsQuery as NSString).utf8String, -1, nil)
                     bindIndex += 1
                 }
@@ -129,10 +133,13 @@ final class PersistenceService {
                 
                 while sqlite3_step(statement) == SQLITE_ROW {
                     let rowId = sqlite3_column_int64(statement, 0)
-                    let fontName = String(cString: sqlite3_column_text(statement, 1))
-                    let filePath = String(cString: sqlite3_column_text(statement, 2))
+                    let fontName = sqlite3_column_text(statement, 1).map { String(cString: $0) } ?? ""
+                    let filePath = sqlite3_column_text(statement, 2).map { String(cString: $0) } ?? ""
                     results.append(FontMatch(id: String(rowId), fontName: fontName, filePath: filePath))
                 }
+            } else {
+                let error = String(cString: sqlite3_errmsg(db))
+                print("Error preparing searchFonts statement: \(error)")
             }
             sqlite3_finalize(statement)
         }
@@ -191,8 +198,12 @@ final class PersistenceService {
                 searchQuery = """
                 SELECT f.fontName, f.fileType, COUNT(*) as count, s.isInstalled, s.realName
                 FROM fonts_fts f
+                JOIN (
+                    SELECT DISTINCT fontName 
+                    FROM fonts_fts 
+                    WHERE fonts_fts MATCH ?
+                ) m ON f.fontName = m.fontName
                 LEFT JOIN font_system_cache s ON f.fontName = s.fontName
-                WHERE f.fontName IN (SELECT fontName FROM fonts_fts WHERE fonts_fts MATCH ?) 
                 GROUP BY f.fontName, f.fileType 
                 ORDER BY f.fontName;
                 """
@@ -201,17 +212,18 @@ final class PersistenceService {
             var statement: OpaquePointer?
             if sqlite3_prepare_v2(db, searchQuery, -1, &statement, nil) == SQLITE_OK {
                 if !query.isEmpty {
-                    let ftsQuery = "\(escapedQuery)*"
+                    // Wrap query in quotes to handle special characters like - or spaces
+                    let ftsQuery = "\"\(escapedQuery)\"*"
                     sqlite3_bind_text(statement, 1, (ftsQuery as NSString).utf8String, -1, nil)
                 }
                 
                 while sqlite3_step(statement) == SQLITE_ROW {
-                    let fontName = String(cString: sqlite3_column_text(statement, 0))
-                    let fileType = String(cString: sqlite3_column_text(statement, 1))
+                    let fontName = sqlite3_column_text(statement, 0).map { String(cString: $0) } ?? ""
+                    let fileType = sqlite3_column_text(statement, 1).map { String(cString: $0) } ?? ".moti"
                     let count = Int(sqlite3_column_int(statement, 2))
                     
                     let existsInSystem: Bool? = sqlite3_column_type(statement, 3) == SQLITE_NULL ? nil : (sqlite3_column_int(statement, 3) != 0)
-                    let realNameInSystem: String? = sqlite3_column_type(statement, 4) == SQLITE_NULL ? nil : String(cString: sqlite3_column_text(statement, 4))
+                    let realNameInSystem: String? = sqlite3_column_text(statement, 4).map { String(cString: $0) }
                     
                     results.append(FontSummaryRow(
                         fontName: fontName, 
@@ -221,6 +233,9 @@ final class PersistenceService {
                         systemFontName: realNameInSystem
                     ))
                 }
+            } else {
+                let error = String(cString: sqlite3_errmsg(db))
+                print("Error preparing getFilteredFontsSummary statement: \(error)")
             }
             sqlite3_finalize(statement)
         }

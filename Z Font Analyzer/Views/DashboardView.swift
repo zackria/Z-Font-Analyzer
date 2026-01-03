@@ -26,10 +26,10 @@ struct DashboardView: View {
                 GeometryReader { geo in
                     Color.clear
                         .onAppear {
-                            viewWidth = geo.size.width
+                            DispatchQueue.main.async { viewWidth = geo.size.width }
                         }
                         .onChange(of: geo.size.width) { _, newValue in
-                            viewWidth = newValue
+                            DispatchQueue.main.async { viewWidth = newValue }
                         }
                 }
             )
@@ -62,10 +62,11 @@ struct DashboardView: View {
             
             // Motion Assets Detail Row
             LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 16), count: assetColumns), spacing: 16) {
-                AssetDetailCard(title: "motion_title".localized, count: fileSearcher.fileTypeCounts[".moti"] ?? 0, icon: "text.alignleft", color: .blue)
-                AssetDetailCard(title: "motion_effect".localized, count: fileSearcher.fileTypeCounts[".moef"] ?? 0, icon: "wand.and.stars", color: .purple)
-                AssetDetailCard(title: "motion_generator".localized, count: fileSearcher.fileTypeCounts[".motn"] ?? 0, icon: "gearshape.2.fill", color: .orange)
-                AssetDetailCard(title: "motion_transition".localized, count: fileSearcher.fileTypeCounts[".motr"] ?? 0, icon: "arrow.left.and.right", color: .green)
+                let total = fileSearcher.totalFoundCount
+                AssetDetailCard(title: "motion_title".localized, count: fileSearcher.fileTypeCounts[".moti"] ?? 0, total: total, icon: "text.alignleft", color: .blue)
+                AssetDetailCard(title: "motion_effect".localized, count: fileSearcher.fileTypeCounts[".moef"] ?? 0, total: total, icon: "wand.and.stars", color: .purple)
+                AssetDetailCard(title: "motion_generator".localized, count: fileSearcher.fileTypeCounts[".motn"] ?? 0, total: total, icon: "gearshape.2.fill", color: .orange)
+                AssetDetailCard(title: "motion_transition".localized, count: fileSearcher.fileTypeCounts[".motr"] ?? 0, total: total, icon: "arrow.left.and.right", color: .green)
             }
         }
     }
@@ -74,8 +75,19 @@ struct DashboardView: View {
     struct AssetDetailCard: View {
         let title: String
         let count: Int
+        let total: Int
         let icon: String
         let color: Color
+        
+        private var percentage: String {
+            guard total > 0 else { return "0%" }
+            let percent = Double(count) / Double(total) * 100
+            if percent >= 10 {
+                return String(format: "%.0f%%", percent)
+            } else {
+                return String(format: "%.1f%%", percent)
+            }
+        }
         
         var body: some View {
             VStack(alignment: .leading, spacing: 12) {
@@ -84,8 +96,14 @@ struct DashboardView: View {
                         .font(.title2)
                         .foregroundColor(color)
                     Spacer()
-                    Text("\(count)")
-                        .font(.title3.bold())
+                    VStack(alignment: .trailing, spacing: 2) {
+                        Text("\(count)")
+                            .font(.title3.bold())
+                        Text(percentage)
+                            .font(.caption2)
+                            .fontWeight(.bold)
+                            .foregroundColor(.secondary)
+                    }
                 }
                 
                 Text(title)

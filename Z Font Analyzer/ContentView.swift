@@ -15,12 +15,18 @@ struct ContentView: View {
     }
     @State private var showingFileImporter = false
     @State private var showingExportDialog = false
-    @State private var exportFormat: ExportFormat = .json
-    @State private var searchText = ""
-    @State private var showingSettings = false
+    @State private var exportFormat: ExportFormat = .resultsJSON
+    @State private var fontsSearchText = ""
+    @State private var filesSearchText = ""
+    @State private var resultsSearchText = ""
+    @State private var activeSheet: ActiveSheet? = nil
+    @State private var hasInitialized = false
     
     // High-performance search state
-    @State private var searchTask: Task<Void, Never>?
+    @State private var fontsSearchTask: Task<Void, Never>?
+    @State private var filesSearchTask: Task<Void, Never>?
+    @State private var resultsSearchTask: Task<Void, Never>?
+    
     @State private var debouncedFontsSummary: [FontSummaryRow] = []
     @State private var debouncedFiles: [FontMatch] = []
     @State private var debouncedResults: [FontMatch] = []
@@ -28,8 +34,17 @@ struct ContentView: View {
     @State private var fontSortOrder = [KeyPathComparator(\FontSummaryRow.fontName)]
     @State private var downloadingFonts: Set<String> = []
     
-    @State private var showingDownloadFailureAlert = false
-    @State private var failedFontsList: [String] = []
+    enum ActiveSheet: Identifiable {
+        case settings
+        case downloadFailure(fonts: [String])
+        
+        var id: String {
+            switch self {
+            case .settings: return "settings"
+            case .downloadFailure: return "downloadFailure"
+            }
+        }
+    }
     
     @State private var statusClearTask: Task<Void, Never>? = nil
     @State private var isShowingWarningStatus = false
@@ -51,7 +66,7 @@ struct ContentView: View {
     }
 
     // Results are now driving the UI from state rather than computed on-the-fly
-    // mapping logic is handled in performSearch()
+    // mapping logic is handled in the specialized performSearch functions
 
     @State private var selectedTab = 0
     @State private var viewWidth: CGFloat = 1000
@@ -77,24 +92,32 @@ struct ContentView: View {
                 // MARK: - Tab View
                 TabView(selection: $selectedTab) {
                     DashboardView(fileSearcher: fileSearcher)
-                        .tabItem { Label("dashboard".localized, systemImage: "rectangle.grid.2x2.fill") }
+                        .tabItem { 
+                            Label("dashboard".localized, systemImage: "rectangle.grid.2x2.fill")
+                                .accessibilityIdentifier("dashboard_tab")
+                        }
                         .tag(0)
-                        .accessibilityIdentifier("dashboard_tab")
 
                     fontsTabView
-                        .tabItem { Label("fonts".localized, systemImage: "textformat") }
+                        .tabItem { 
+                            Label("fonts".localized, systemImage: "textformat")
+                                .accessibilityIdentifier("fonts_tab")
+                        }
                         .tag(1)
-                        .accessibilityIdentifier("fonts_tab")
 
                     filesTabView
-                        .tabItem { Label("files".localized, systemImage: "doc.plaintext") }
+                        .tabItem { 
+                            Label("files".localized, systemImage: "doc.plaintext")
+                                .accessibilityIdentifier("files_tab")
+                        }
                         .tag(2)
-                        .accessibilityIdentifier("files_tab")
 
                     resultsTabView
-                        .tabItem { Label("results".localized, systemImage: "doc.text.magnifyingglass") }
+                        .tabItem { 
+                            Label("results".localized, systemImage: "doc.text.magnifyingglass")
+                                .accessibilityIdentifier("results_tab")
+                        }
                         .tag(3)
-                        .accessibilityIdentifier("results_tab")
                 }
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
             }
@@ -103,8 +126,12 @@ struct ContentView: View {
             .background(
                 GeometryReader { geo in
                     Color.clear
-                        .onAppear { viewWidth = geo.size.width }
-                        .onChange(of: geo.size.width) { _, newValue in viewWidth = newValue }
+                        .onAppear { 
+                            DispatchQueue.main.async { viewWidth = geo.size.width }
+                        }
+                        .onChange(of: geo.size.width) { _, newValue in 
+                            DispatchQueue.main.async { viewWidth = newValue }
+                        }
                 }
             )
             .fileImporter(isPresented: $showingFileImporter,
@@ -116,29 +143,33 @@ struct ContentView: View {
                           contentType: exportFormat.utType,
                           defaultFilename: Exporter.defaultFilename(for: exportFormat),
                           onCompletion: handleExport(_:))
-            .sheet(isPresented: $showingSettings) {
-                SettingsView(
-                    maxConcurrentOperations: $maxConcurrentOperations,
-                    skipHiddenFolders: $skipHiddenFolders
-                )
-                .environmentObject(localization)
+            .sheet(item: $activeSheet) { item in
+                switch item {
+                case .settings:
+                    SettingsView(
+                        maxConcurrentOperations: $maxConcurrentOperations,
+                        skipHiddenFolders: $skipHiddenFolders
+                    )
+                    .environmentObject(localization)
+                case .downloadFailure(let fonts):
+                    DownloadFailureSheet(failedFonts: fonts)
+                        .environmentObject(localization)
+                }
             }
             .onAppear {
-                loadBookmark()
-                PersistenceService.shared.clearDatabase() // Ensure clean state on launch
-                performSearch() // Initial load
+                if !hasInitialized {
+                    loadBookmark()
+                    PersistenceService.shared.clearDatabase()
+                    hasInitialized = true
+                }
             }
             .onDisappear(perform: fileSearcher.stopAccessingCurrentDirectory)
-            .sheet(isPresented: $showingDownloadFailureAlert) {
-                DownloadFailureSheet(failedFonts: failedFontsList)
-                    .environmentObject(localization)
-            }
-            .onChange(of: searchText) { _, _ in
-                scheduleSearch()
-            }
+            .onChange(of: fontsSearchText) { _, _ in scheduleFontsSearch() }
+            .onChange(of: filesSearchText) { _, _ in scheduleFilesSearch() }
+            .onChange(of: resultsSearchText) { _, _ in scheduleResultsSearch() }
             .onChange(of: fileSearcher.isSearching) { _, isSearching in
                 if !isSearching {
-                    performSearch() // Refresh list after search finishes
+                    performAllSearches() // Refresh lists after search finishes
                     
                     // Trigger background system font existence check
                     if !fileSearcher.fontNameCounts.isEmpty {
@@ -200,7 +231,7 @@ struct ContentView: View {
         HStack(spacing: 12) {
             if viewWidth <= 750 { Spacer() }
             
-            Button(action: { showingSettings = true }) {
+            Button(action: { activeSheet = .settings }) {
                 Label("settings".localized, systemImage: "gear")
             }
             .accessibilityIdentifier("settings_button")
@@ -293,12 +324,32 @@ struct ContentView: View {
     }
 
     private var searchFieldArea: some View {
-        HStack {
+        let binding = Binding<String>(
+            get: {
+                switch selectedTagForSearch {
+                case 1: return fontsSearchText
+                case 2: return filesSearchText
+                case 3: return resultsSearchText
+                default: return ""
+                }
+            },
+            set: { newValue in
+                switch selectedTagForSearch {
+                case 1: fontsSearchText = newValue
+                case 2: filesSearchText = newValue
+                case 3: resultsSearchText = newValue
+                default: break
+                }
+            }
+        )
+
+        return HStack {
             Image(systemName: "magnifyingglass").foregroundColor(.secondary)
-            TextField("search_fonts_placeholder".localized, text: $searchText)
+            TextField("search_fonts_placeholder".localized, text: binding)
                 .textFieldStyle(.plain)
-            if !searchText.isEmpty {
-                Button(action: { searchText = "" }) {
+                .accessibilityIdentifier("search_field")
+            if !binding.wrappedValue.isEmpty {
+                Button(action: { binding.wrappedValue = "" }) {
                     Image(systemName: "xmark.circle.fill").foregroundColor(.secondary)
                 }
                 .buttonStyle(.plain)
@@ -310,116 +361,151 @@ struct ContentView: View {
         .padding(.bottom, 12)
     }
 
+    private var selectedTagForSearch: Int { selectedTab }
+
     private var fontsTabView: some View {
-        Table(debouncedFontsSummary, sortOrder: $fontSortOrder) {
-            TableColumn("font_name".localized, value: \.fontName)
-            TableColumn("file_type".localized, value: \.fileType)
-            TableColumn("description".localized, value: \.description)
-            TableColumn("count".localized, value: \.count) { row in
-                Text("\(row.count)")
-            }
-            TableColumn("font_exists".localized, value: \.existsSortValue) { row in
-                if let exists = row.existsInSystem {
-                    Image(systemName: exists ? "checkmark.circle.fill" : "xmark.circle.fill")
-                        .foregroundColor(exists ? .green : .red)
-                } else {
-                    ProgressView().controlSize(.small)
+        VStack(spacing: 0) {
+            Table(debouncedFontsSummary, sortOrder: $fontSortOrder) {
+                TableColumn("font_name".localized, value: \.fontName)
+                TableColumn("file_type".localized, value: \.fileType)
+                TableColumn("description".localized, value: \.description)
+                TableColumn("count".localized, value: \.count) { row in
+                    Text("\(row.count)")
                 }
-            }
-            TableColumn("real_font_name".localized, value: \.realNameSortValue) { row in
-                Text(row.systemFontName ?? "—")
-                    .foregroundColor(.secondary)
-            }
-            TableColumn("actions".localized) { row in
-                if row.existsInSystem == false {
-                    if downloadingFonts.contains(row.fontName) {
-                        ProgressView().controlSize(.small)
-                    } else {
-                        Button(action: { 
-                            print("Download button pressed for font: \(row.fontName)")
-                            downloadSpecificFont(row.fontName) 
-                        }) {
-                            Image(systemName: "arrow.down.circle")
-                        }
-                        .buttonStyle(.plain)
-                        .foregroundColor(.accentColor)
-                        .help("download".localized)
-                    }
+                TableColumn("font_exists".localized, value: \.existsSortValue) { row in
+                    statusIndicator(for: row.existsInSystem)
+                }
+                TableColumn("real_font_name".localized, value: \.realNameSortValue) { row in
+                    Text(row.systemFontName ?? "—").foregroundColor(.secondary)
+                }
+                TableColumn("actions".localized) { row in
+                    actionButton(for: row)
                 }
             }
         }
+        .accessibilityIdentifier("fonts_table")
         .onChange(of: fontSortOrder) { _, newOrder in
             debouncedFontsSummary.sort(using: newOrder)
         }
         .overlay {
-            if fileSearcher.foundFonts.isEmpty && !fileSearcher.isSearching {
-                ContentUnavailableView("no_fonts_found".localized, systemImage: "textformat.alt")
-            } else if debouncedFontsSummary.isEmpty && !searchText.isEmpty {
-                ContentUnavailableView("no_matching_fonts".localized, systemImage: "textformat.alt")
+            if debouncedFontsSummary.isEmpty && !fileSearcher.isSearching {
+                if fontsSearchText.isEmpty {
+                    ContentUnavailableView("no_fonts_found".localized, systemImage: "textformat.alt")
+                } else {
+                    ContentUnavailableView("no_matching_fonts".localized, systemImage: "textformat.alt")
+                }
             }
         }
     }
 
     private var filesTabView: some View {
-        Table(debouncedFiles) {
-            TableColumn("file_name".localized) { font in
-                Text(URL(fileURLWithPath: font.filePath).lastPathComponent)
+        VStack(spacing: 0) {
+            Table(debouncedFiles) {
+                TableColumn("file_name".localized) { font in
+                    Text(URL(fileURLWithPath: font.filePath).lastPathComponent)
+                }
+                TableColumn("file_path".localized) { font in
+                    Text(font.filePath).lineLimit(1).help(font.filePath)
+                }
+                TableColumn("font".localized, value: \.fontName)
             }
-            TableColumn("file_path".localized) { font in
-                Text(font.filePath).lineLimit(1).help(font.filePath)
-            }
-            TableColumn("font".localized, value: \.fontName)
         }
+        .accessibilityIdentifier("files_table")
         .overlay {
-            if fileSearcher.foundFonts.isEmpty && !fileSearcher.isSearching {
-                ContentUnavailableView("no_fonts_found".localized, systemImage: "textformat.alt")
-            } else if debouncedFiles.isEmpty && !searchText.isEmpty {
-                ContentUnavailableView("no_matching_fonts".localized, systemImage: "textformat.alt")
+            if debouncedFiles.isEmpty && !fileSearcher.isSearching {
+                if filesSearchText.isEmpty {
+                    ContentUnavailableView("no_fonts_found".localized, systemImage: "textformat.alt")
+                } else {
+                    ContentUnavailableView("no_matching_fonts".localized, systemImage: "textformat.alt")
+                }
             }
         }
     }
 
     private var resultsTabView: some View {
-        Table(debouncedResults) {
-            TableColumn("font_name".localized, value: \.fontName)
-            TableColumn("file_path".localized) { font in
-                Text(font.filePath).lineLimit(1).help(font.filePath)
+        VStack(spacing: 0) {
+            Table(debouncedResults) {
+                TableColumn("font_name".localized, value: \.fontName)
+                    .width(min: 150, ideal: 180, max: 250)
+                TableColumn("file_path".localized) { font in
+                    Text(font.filePath).lineLimit(1).help(font.filePath)
+                }
             }
         }
+        .accessibilityIdentifier("results_table")
         .overlay {
-            if fileSearcher.foundFonts.isEmpty && !fileSearcher.isSearching {
-                ContentUnavailableView("no_fonts_found".localized, systemImage: "textformat.alt")
-            } else if debouncedResults.isEmpty && !searchText.isEmpty {
-                ContentUnavailableView("no_matching_fonts".localized, systemImage: "textformat.alt")
+            if debouncedResults.isEmpty && !fileSearcher.isSearching {
+                if resultsSearchText.isEmpty {
+                    ContentUnavailableView("no_fonts_found".localized, systemImage: "textformat.alt")
+                } else {
+                    ContentUnavailableView("no_matching_fonts".localized, systemImage: "textformat.alt")
+                }
             }
         }
     }
 
     // MARK: - Search Pipeline
 
-    private func scheduleSearch() {
-        searchTask?.cancel()
-        searchTask = Task {
-            try? await Task.sleep(nanoseconds: 300_000_000) // 300ms debounce
-            if !Task.isCancelled {
-                performSearch()
+    private func scheduleFontsSearch() {
+        fontsSearchTask?.cancel()
+        fontsSearchTask = Task {
+            try? await Task.sleep(nanoseconds: 300_000_000)
+            if !Task.isCancelled { performFontsSearch() }
+        }
+    }
+
+    private func scheduleFilesSearch() {
+        filesSearchTask?.cancel()
+        filesSearchTask = Task {
+            try? await Task.sleep(nanoseconds: 300_000_000)
+            if !Task.isCancelled { performFilesSearch() }
+        }
+    }
+
+    private func scheduleResultsSearch() {
+        resultsSearchTask?.cancel()
+        resultsSearchTask = Task {
+            try? await Task.sleep(nanoseconds: 300_000_000)
+            if !Task.isCancelled { performResultsSearch() }
+        }
+    }
+
+    private func performAllSearches() {
+        performFontsSearch()
+        performFilesSearch()
+        performResultsSearch()
+    }
+
+    private func performFontsSearch() {
+        let query = fontsSearchText.trimmingCharacters(in: .whitespacesAndNewlines)
+        let currentSortOrder = self.fontSortOrder
+        
+        DispatchQueue.global(qos: .userInitiated).async {
+            let summary = PersistenceService.shared.getFilteredFontsSummary(query: query)
+            var sortedSummary = summary
+            sortedSummary.sort(using: currentSortOrder)
+            
+            DispatchQueue.main.async {
+                self.debouncedFontsSummary = sortedSummary
             }
         }
     }
 
-    private func performSearch() {
-        let query = searchText.trimmingCharacters(in: .whitespacesAndNewlines)
-        
-        // Run database queries on background thread
+    private func performFilesSearch() {
+        let query = filesSearchText.trimmingCharacters(in: .whitespacesAndNewlines)
         DispatchQueue.global(qos: .userInitiated).async {
-            let summary = PersistenceService.shared.getFilteredFontsSummary(query: query)
             let matches = PersistenceService.shared.searchFonts(query: query, limit: 1000)
-            
             DispatchQueue.main.async {
-                var sortedSummary = summary
-                sortedSummary.sort(using: self.fontSortOrder)
-                self.debouncedFontsSummary = sortedSummary
                 self.debouncedFiles = matches
+            }
+        }
+    }
+
+    private func performResultsSearch() {
+        let query = resultsSearchText.trimmingCharacters(in: .whitespacesAndNewlines)
+        DispatchQueue.global(qos: .userInitiated).async {
+            let matches = PersistenceService.shared.searchFonts(query: query, limit: 1000)
+            DispatchQueue.main.async {
                 self.debouncedResults = matches
             }
         }
@@ -428,21 +514,21 @@ struct ContentView: View {
     private func checkSystemFontsInBackground() {
         let uniqueFonts = Array(fileSearcher.fontNameCounts.keys)
         
-        DispatchQueue.global(qos: .background).async {
-            SystemFontService.shared.refreshSystemFonts()
-            
-            for fontName in uniqueFonts {
-                let match = SystemFontService.shared.findBestMatch(for: fontName)
-                PersistenceService.shared.updateSystemFontInfo(
-                    fontName: fontName,
-                    isInstalled: match.exists,
-                    realName: match.realName
-                )
-            }
-            
-            // Final refresh to show results
-            DispatchQueue.main.async {
-                self.performSearch()
+        SystemFontService.shared.refreshSystemFonts {
+            DispatchQueue.global(qos: .background).async {
+                for fontName in uniqueFonts {
+                    let match = SystemFontService.shared.findBestMatch(for: fontName)
+                    PersistenceService.shared.updateSystemFontInfo(
+                        fontName: fontName,
+                        isInstalled: match.exists,
+                        realName: match.realName
+                    )
+                }
+                
+                // Final refresh to show results
+                DispatchQueue.main.async {
+                    self.performAllSearches()
+                }
             }
         }
     }
@@ -522,8 +608,7 @@ struct ContentView: View {
                 }
                 
                 if !stillMissing.isEmpty {
-                    self.failedFontsList = stillMissing
-                    self.showingDownloadFailureAlert = true
+                    self.activeSheet = .downloadFailure(fonts: stillMissing)
                 }
                 
                 if success {
@@ -536,7 +621,12 @@ struct ContentView: View {
     // MARK: - Handlers
 
     private var exportDocument: ExportDocument {
-        let data = Exporter.exportFonts(fileSearcher.foundFonts, fontNameToFileType: fileSearcher.fontNameToFileType, as: exportFormat)
+        let data: Data?
+        if exportFormat == .fontsCSV || exportFormat == .fontsJSON {
+            data = Exporter.exportSummary(debouncedFontsSummary, as: exportFormat)
+        } else {
+            data = Exporter.exportFonts(fileSearcher.foundFonts, fontNameToFileType: fileSearcher.fontNameToFileType, as: exportFormat)
+        }
         return ExportDocument(data: data ?? Data(), contentType: exportFormat.utType)
     }
 
@@ -572,6 +662,32 @@ struct ContentView: View {
             if isStale { saveBookmark(for: url) }
             _ = url.startAccessingSecurityScopedResource()
             self.selectedDirectoryURL = url
+        }
+    }
+
+    @ViewBuilder
+    private func statusIndicator(for exists: Bool?) -> some View {
+        if let exists = exists {
+            Image(systemName: exists ? "checkmark.circle.fill" : "xmark.circle.fill")
+                .foregroundColor(exists ? .green : .red)
+        } else {
+            ProgressView().controlSize(.small)
+        }
+    }
+
+    @ViewBuilder
+    private func actionButton(for row: FontSummaryRow) -> some View {
+        if row.existsInSystem == false {
+            if downloadingFonts.contains(row.fontName) {
+                ProgressView().controlSize(.small)
+            } else {
+                Button(action: { downloadSpecificFont(row.fontName) }) {
+                    Image(systemName: "arrow.down.circle")
+                }
+                .buttonStyle(.plain)
+                .foregroundColor(.accentColor)
+                .help("download".localized)
+            }
         }
     }
 }
@@ -613,7 +729,7 @@ struct FontSummaryRow: Identifiable {
     }
     
     var realNameSortValue: String {
-        systemFontName ?? ""
+        systemFontName ?? "—"
     }
 }
 
@@ -662,6 +778,22 @@ struct DownloadFailureSheet: View {
                 .buttonStyle(.plain)
             }
             
+            // External resources section
+            VStack(alignment: .leading, spacing: 12) {
+                Text("download_resources_title".localized)
+                    .font(.headline)
+                    .foregroundColor(.primary)
+                
+                HStack(spacing: 15) {
+                    resourceLink(title: "google_fonts".localized, url: "https://fonts.google.com/")
+                    resourceLink(title: "font_squirrel".localized, url: "https://www.fontsquirrel.com/")
+                    resourceLink(title: "dafont".localized, url: "https://www.dafont.com/")
+                    resourceLink(title: "adobe_fonts".localized, url: "https://fonts.adobe.com/")
+                }
+            }
+            .padding(.vertical, 10)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            
             Button("done".localized) {
                 dismiss()
             }
@@ -669,7 +801,21 @@ struct DownloadFailureSheet: View {
             .controlSize(.large)
         }
         .padding(30)
-        .frame(width: 500, height: 600)
+        .frame(width: 530, height: 680)
+    }
+    
+    @ViewBuilder
+    private func resourceLink(title: String, url: String) -> some View {
+        Link(destination: URL(string: url)!) {
+            Text(title)
+                .font(.caption)
+                .fontWeight(.medium)
+                .padding(.horizontal, 10)
+                .padding(.vertical, 6)
+                .background(Color.accentColor.opacity(0.1))
+                .cornerRadius(6)
+        }
+        .buttonStyle(.plain)
     }
     
     private func copyToClipboard() {

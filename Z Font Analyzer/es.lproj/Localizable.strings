@@ -67,6 +67,13 @@
 "download_failure_message" = "Las siguientes fuentes no se encontraron en los servidores de Apple y deben instalarse manualmente:";
 "copy_to_clipboard" = "Copiar al portapapeles";
 "copied" = "¡Copiado!";
-
-
-
+"download_resources_title" = "Encontrar fuentes faltantes:";
+"google_fonts" = "Google Fonts";
+"font_squirrel" = "Font Squirrel";
+"dafont" = "DaFont";
+"adobe_fonts" = "Adobe Fonts";
+"settings_general" = "General";
+"settings_performance_desc" = "Ajusta cuántos archivos se escanean a la vez. Los valores más altos son más rápidos pero usan más CPU.";
+"settings_search_desc" = "Configura cómo el analizador busca en los archivos de tu proyecto.";
+"settings_language_desc" = "Elige el idioma de la interfaz de la aplicación.";
+"settings_appearance_desc" = "Selecciona un tema claro u oscuro, o sigue los ajustes del sistema de tu Mac.";

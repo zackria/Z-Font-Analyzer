@@ -19,24 +19,31 @@ final class SystemFontService {
     /**
      Refreshes the internal cache of available system font names.
      */
-    func refreshSystemFonts() {
-        let fonts = NSFontManager.shared.availableFonts
-        var dict: [String: String] = [:]
-        
-        for font in fonts {
-            // Index by PostScript name
-            dict[normalize(font)] = font
+    func refreshSystemFonts(completion: (() -> Void)? = nil) {
+        DispatchQueue.global(qos: .userInteractive).async {
+            let fonts = NSFontManager.shared.availableFonts
+            var dict: [String: String] = [:]
             
-            // Try to index by localized display name without full NSFont instantiation for performance
-            let descriptor = CTFontDescriptorCreateWithNameAndSize(font as CFString, 12.0)
-            if let displayName = CTFontDescriptorCopyAttribute(descriptor, kCTFontDisplayNameAttribute) as? String {
-                dict[normalize(displayName)] = font
+            for font in fonts {
+                // Index by PostScript name
+                dict[self.normalize(font)] = font
+                
+                // Try to index by localized display name without full NSFont instantiation for performance
+                let descriptor = CTFontDescriptorCreateWithNameAndSize(font as CFString, 12.0)
+                if let displayName = CTFontDescriptorCopyAttribute(descriptor, kCTFontDisplayNameAttribute) as? String {
+                    dict[self.normalize(displayName)] = font
+                }
+                if let familyName = CTFontDescriptorCopyAttribute(descriptor, kCTFontFamilyNameAttribute) as? String {
+                    dict[self.normalize(familyName)] = font
+                }
             }
-            if let familyName = CTFontDescriptorCopyAttribute(descriptor, kCTFontFamilyNameAttribute) as? String {
-                dict[normalize(familyName)] = font
+            
+            let updatedDict = dict
+            DispatchQueue.main.async {
+                self.systemFontNames = updatedDict
+                completion?()
             }
         }
-        self.systemFontNames = dict
     }
     
     /**

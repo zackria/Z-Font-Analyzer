@@ -92,4 +92,25 @@ final class PersistenceTests: XCTestCase {
         persistence.clearDatabase()
         XCTAssertEqual(persistence.getTotalFontsCount(), 0)
     }
+    
+    func testUpdateSystemFontInfo() {
+        persistence.updateSystemFontInfo(fontName: "Helvetica", isInstalled: true, realName: "Helvetica-Real")
+        
+        persistence.insertFontsBatch([(FontMatch(fontName: "Helvetica", filePath: "path"), ".moti")])
+        
+        let results = persistence.getFilteredFontsSummary(query: "Helvetica")
+        XCTAssertEqual(results.count, 1)
+        XCTAssertEqual(results.first?.existsInSystem, true)
+        XCTAssertEqual(results.first?.systemFontName, "Helvetica-Real")
+    }
+    
+    func testFilteredSummaryWithCache() {
+        persistence.insertFontsBatch([(FontMatch(fontName: "Arial", filePath: "p1"), ".moti")])
+        persistence.updateSystemFontInfo(fontName: "Arial", isInstalled: false, realName: nil)
+        
+        let summary = persistence.getFilteredFontsSummary(query: "")
+        let arial = summary.first(where: { $0.fontName == "Arial" })
+        XCTAssertEqual(arial?.existsInSystem, false)
+        XCTAssertNil(arial?.systemFontName)
+    }
 }

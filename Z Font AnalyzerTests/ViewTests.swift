@@ -51,4 +51,34 @@ final class ViewTests: XCTestCase {
         hostedView.display()
         XCTAssertNotNil(hostedView)
     }
+
+    @MainActor
+    func testAssetDetailCard() {
+        // Test normal case (> 10%)
+        let card1 = DashboardView.AssetDetailCard(title: "Test", count: 10, total: 20, icon: "text.alignleft", color: .blue)
+        let hostedView1 = NSHostingView(rootView: card1)
+        hostedView1.display()
+        
+        // Test small percentage (< 10%)
+        let card2 = DashboardView.AssetDetailCard(title: "Test", count: 1, total: 100, icon: "text.alignleft", color: .blue)
+        let hostedView2 = NSHostingView(rootView: card2)
+        hostedView2.display()
+        
+        // Test zero total (branch check)
+        let card3 = DashboardView.AssetDetailCard(title: "Test", count: 0, total: 0, icon: "text.alignleft", color: .blue)
+        let hostedView3 = NSHostingView(rootView: card3)
+        hostedView3.display()
+        
+        XCTAssertNotNil(hostedView1)
+    }
+
+    @MainActor
+    func testSettingsView() {
+        let view = SettingsView(maxConcurrentOperations: .constant(4), skipHiddenFolders: .constant(true))
+            .environmentObject(LocalizationService.shared)
+        let hostedView = NSHostingView(rootView: view)
+        hostedView.frame = NSRect(x: 0, y: 0, width: 500, height: 600)
+        hostedView.display()
+        XCTAssertNotNil(hostedView)
+    }
 }

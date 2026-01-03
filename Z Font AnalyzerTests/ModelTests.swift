@@ -60,4 +60,17 @@ final class ModelTests: XCTestCase {
         XCTAssertEqual(row1.id, row2.id)
         XCTAssertEqual(row1.id, "A|.moti")
     }
+
+    func testFontSummaryRowSortValues() {
+        let r1 = FontSummaryRow(fontName: "A", fileType: ".moti", count: 1, existsInSystem: true, systemFontName: "Real")
+        XCTAssertEqual(r1.existsSortValue, 1)
+        XCTAssertEqual(r1.realNameSortValue, "Real")
+        
+        let r2 = FontSummaryRow(fontName: "B", fileType: ".moti", count: 1, existsInSystem: false)
+        XCTAssertEqual(r2.existsSortValue, -1)
+        XCTAssertEqual(r2.realNameSortValue, "—")
+        
+        let r3 = FontSummaryRow(fontName: "C", fileType: ".moti", count: 1, existsInSystem: nil)
+        XCTAssertEqual(r3.existsSortValue, 0)
+    }
 }
